@@ -89,21 +89,27 @@ func startURL() string {
 
 func (s *shell) newMainWindow() *application.WebviewWindow {
 	opts := application.WebviewWindowOptions{
-		Name:             "main",
-		Title:            "微信读书",
-		Width:            1100,
-		Height:           800,
-		MinWidth:         420,
-		MinHeight:        360,
-		URL:              startURL(),
-		AlwaysOnTop:      s.cfg.AlwaysOnTop,
-		BackgroundColour: application.NewRGB(255, 255, 255),
-		JS:               s.injectScript(),
+		Name:                "main",
+		Title:               "微信读书",
+		Width:               1100,
+		Height:              800,
+		MinWidth:            420,
+		MinHeight:           360,
+		URL:                 startURL(),
+		AlwaysOnTop:         s.cfg.AlwaysOnTop,
+		BackgroundColour:    application.NewRGB(255, 255, 255),
+		JS:                  s.injectScript(),
+		CloseButtonState:    application.ButtonHidden,
+		MinimiseButtonState: application.ButtonHidden,
+		MaximiseButtonState: application.ButtonHidden,
 		Mac: application.MacWindow{
 			// 透明窗口 + 透明 webview，平时由 applyWindowLook 恢复为不透明。
 			Backdrop: application.MacBackdropTransparent,
+			// 内容铺满整窗，原生红绿灯隐藏，由注入的标题条负责拖动和关闭。
 			TitleBar: application.MacTitleBar{
 				AppearsTransparent: true,
+				HideTitle:          true,
+				FullSizeContent:    true,
 			},
 			WebviewPreferences: application.MacWebviewPreferences{
 				ApplicationNameForUserAgent: uaSuffix,
@@ -289,6 +295,22 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 		s.immersiveItem.SetChecked(p.Immersive)
 		s.stealthItem.SetChecked(p.Stealth)
 		s.menu.Update()
+	case "tap":
+		var pt struct{ X, Y float64 }
+		if err := json.Unmarshal([]byte(msg.Value), &pt); err != nil {
+			return
+		}
+		w, h := s.win.Size()
+		if pt.X < 0 || pt.Y < 0 || pt.X > float64(w) || pt.Y > float64(h) {
+			return
+		}
+		windowTap(s.win, pt.X, pt.Y)
+	case "close":
+		s.win.Close()
+	case "minimise":
+		s.win.Minimise()
+	case "shelf":
+		s.win.SetURL(homeURL)
 	case "open":
 		u, err := url.Parse(msg.Value)
 		if err == nil && (u.Scheme == "http" || u.Scheme == "https") {

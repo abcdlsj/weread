@@ -17,17 +17,15 @@ static WKWebView *findWebView(NSView *v) {
 	return nil;
 }
 
-// 伪装模式下窗口完全透明，背景由页面 CSS 的半透明色决定；标题文字一并隐藏。
+// 伪装模式下窗口完全透明，背景由页面 CSS 的半透明色决定。
 static void setWindowStealth(void *ptr, bool on) {
 	NSWindow *w = (__bridge NSWindow *)ptr;
 	if (on) {
 		[w setOpaque:NO];
 		[w setBackgroundColor:[NSColor clearColor]];
-		[w setTitleVisibility:NSWindowTitleHidden];
 	} else {
 		[w setOpaque:YES];
 		[w setBackgroundColor:[NSColor windowBackgroundColor]];
-		[w setTitleVisibility:NSWindowTitleVisible];
 	}
 	// WKWebView 自身也会画一层不透明底色，需一并关掉，页面 CSS 的半透明才能透出去。
 	WKWebView *web = findWebView(w.contentView);
@@ -52,6 +50,25 @@ static void setWindowAppearance(void *ptr, int mode) {
 		[w setAppearance:nil];
 	}
 }
+// 部分官方按钮不响应脚本合成的点击，这里向窗口投递一次真实的鼠标点击。
+// x、y 是内容区坐标（左上角为原点，单位为点）。
+static void windowTap(void *ptr, double x, double y) {
+	NSWindow *w = (__bridge NSWindow *)ptr;
+	NSPoint p = NSMakePoint(x, w.contentView.bounds.size.height - y);
+	NSTimeInterval t = [[NSProcessInfo processInfo] systemUptime];
+	for (int i = 0; i < 2; i++) {
+		NSEvent *e = [NSEvent mouseEventWithType:(i == 0 ? NSEventTypeLeftMouseDown : NSEventTypeLeftMouseUp)
+		                                location:p
+		                           modifierFlags:0
+		                               timestamp:t
+		                            windowNumber:w.windowNumber
+		                                 context:nil
+		                             eventNumber:0
+		                              clickCount:1
+		                                pressure:(i == 0 ? 1.0 : 0.0)];
+		[w sendEvent:e];
+	}
+}
 */
 import "C"
 
@@ -69,6 +86,14 @@ func applyWindowLook(w *application.WebviewWindow, p Prefs) {
 		if ptr := w.NativeWindow(); ptr != nil {
 			C.setWindowStealth(ptr, C.bool(p.Stealth))
 			C.setWindowAppearance(ptr, C.int(mode))
+		}
+	})
+}
+
+func windowTap(w *application.WebviewWindow, x, y float64) {
+	application.InvokeAsync(func() {
+		if ptr := w.NativeWindow(); ptr != nil {
+			C.windowTap(ptr, C.double(x), C.double(y))
 		}
 	})
 }

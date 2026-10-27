@@ -1,48 +1,340 @@
-/* 只在阅读页生效的增强样式；开关由 <html> 上的 wr-* class 控制。 */
+/* 阅读增强样式；开关由 <html> 上的 wr-* class 控制。 */
 
-html.wr-reader { --wr-w: 800px; }
+:root {
+  --wr-bar-h: 30px;
+  --wr-ui-font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  --wr-mono: ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace;
+  /* 浮层配色，浅色页面 */
+  --wr-fg: #1f1f1f;
+  --wr-sub: #8a8a8e;
+  --wr-surface: rgba(252, 252, 252, .86);
+  --wr-chip: rgba(0, 0, 0, .05);
+  --wr-chip-hover: rgba(0, 0, 0, .09);
+  --wr-line: rgba(0, 0, 0, .08);
+  --wr-accent: #1b88ee;
+  --wr-shadow: 0 8px 32px rgba(0, 0, 0, .14), 0 0 0 .5px rgba(0, 0, 0, .08);
+}
+html.wr-dark {
+  --wr-fg: #e8e8ea;
+  --wr-sub: #8d8d92;
+  --wr-surface: rgba(40, 40, 42, .86);
+  --wr-chip: rgba(255, 255, 255, .07);
+  --wr-chip-hover: rgba(255, 255, 255, .12);
+  --wr-line: rgba(255, 255, 255, .08);
+  --wr-shadow: 0 8px 32px rgba(0, 0, 0, .45), 0 0 0 .5px rgba(255, 255, 255, .08);
+}
+
+/* ---------- 隐藏官方多余元素 ---------- */
+/* 阅读页：顶栏、右侧按钮、窄屏底栏，全部收进悬浮 Dock。
+   右侧按钮只隐藏按钮本身，它们弹出的面板仍需显示。 */
+html.wr-reader .readerTopBar,
+html.wr-reader .readerBottomBar,
+html.wr-reader .readerMemberCardTipsNew {
+  display: none !important;
+}
+/* 侧栏按钮需保留布局，Dock 代点时要能命中 */
+html.wr-reader .readerControls .wr_tooltip_container {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+html.wr-reader.wr-tapping .readerControls .wr_tooltip_container { pointer-events: auto !important; }
+html.wr-reader .readerControls .wr_tooltip_item { display: none !important; }
+/* 书架页：去掉推广入口 */
+.navBar_link_Upload,
+.navBar_link_ink,
+.navBar_link_Phone,
+.navBar_separator {
+  display: none !important;
+}
+/* 内容让出标题条高度 */
+html:not(.wr-reader) .navBar { top: var(--wr-bar-h) !important; }
+html:not(.wr-reader) .app { padding-top: var(--wr-bar-h); }
+html.wr-reader .readerContent .app_content { padding-top: calc(var(--wr-bar-h) + 12px) !important; }
+
+/* ---------- 版心宽度，随窗口收缩 ---------- */
+html.wr-reader { --wr-w: 860px; }
 html.wr-reader.wr-w-narrow { --wr-w: 680px; }
 html.wr-reader.wr-w-medium { --wr-w: 860px; }
 html.wr-reader.wr-w-wide   { --wr-w: 1120px; }
-html.wr-reader.wr-w-full   { --wr-w: calc(100vw - 120px); }
-
-/* 版心宽度：正文、顶栏同宽，右侧控件贴着版心外沿 */
-/* 版心随窗口收缩，窄窗口下不溢出；右侧留出官方控件的位置 */
-html.wr-reader { --wr-cw: min(var(--wr-w), calc(100vw - 112px)); }
-html.wr-reader:not(.wr-horizontal) .app_content,
-html.wr-reader:not(.wr-horizontal) .readerTopBar {
+html.wr-reader.wr-w-full   { --wr-w: 100vw; }
+html.wr-reader { --wr-cw: min(var(--wr-w), calc(100vw - 48px)); }
+html.wr-reader:not(.wr-horizontal) .app_content {
   max-width: var(--wr-cw) !important;
   width: var(--wr-cw) !important;
 }
-html.wr-reader:not(.wr-horizontal) .readerControls {
-  left: calc(50% + var(--wr-cw) / 2 + 24px) !important;
-  margin-left: 0 !important;
-}
-html.wr-reader.wr-w-full:not(.wr-horizontal) .readerControls {
-  left: auto !important;
-  right: 16px !important;
-}
 
-/* 沉浸模式：工具栏淡出，鼠标移动或靠近边缘时浮现 */
-html.wr-reader.wr-immersive .readerTopBar,
-html.wr-reader.wr-immersive .readerControls {
-  transition: opacity .25s ease, transform .25s ease !important;
+/* ---------- 标题条 ---------- */
+#wr-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 2147483006;
+  display: flex;
+  align-items: center;
+  height: var(--wr-bar-h);
+  padding: 0 12px;
+  /* 极低透明度：完全透明的像素收不到鼠标事件，拖动会失效 */
+  background: rgba(127, 127, 127, .01);
+  font: 12px/1 var(--wr-ui-font);
+  color: var(--wr-sub);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
-html.wr-reader.wr-immersive:not(.wr-ui) .readerTopBar {
-  opacity: 0 !important;
-  transform: translateY(-8px);
+#wr-bar .wr-lights { display: flex; gap: 8px; transition: opacity .25s ease; }
+#wr-bar .wr-lights button {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--wr-line);
+  transition: background-color .15s ease;
+}
+#wr-bar:hover [data-win=close] { background: #ff5f57; }
+#wr-bar:hover [data-win=minimise] { background: #febc2e; }
+#wr-bar .wr-lights button:focus-visible { outline: 2px solid var(--wr-accent); outline-offset: 2px; }
+#wr-bar .wr-title {
+  flex: 1;
+  margin: 0 64px 0 12px;
+  overflow: hidden;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: .8;
+  transition: opacity .25s ease;
+}
+html.wr-reader.wr-immersive:not(.wr-ui) #wr-bar .wr-title,
+html.wr-reader.wr-immersive:not(.wr-ui) #wr-bar .wr-lights { opacity: 0; }
+#wr-bar:hover .wr-title, #wr-bar:hover .wr-lights { opacity: 1 !important; }
+
+/* ---------- 悬浮 Dock ---------- */
+#wr-dock {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483004;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font: 12px/1 var(--wr-ui-font);
+  transition: opacity .3s ease;
+}
+#wr-dock button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--wr-fg);
+  background: var(--wr-surface);
+  backdrop-filter: blur(20px) saturate(1.6);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: var(--wr-shadow);
+  cursor: pointer;
+  transition: transform .18s ease, opacity .18s ease, background-color .15s ease;
+}
+#wr-dock button:hover { background: var(--wr-chip-hover); }
+#wr-dock button:focus-visible { outline: 2px solid var(--wr-accent); outline-offset: 2px; }
+#wr-dock button[hidden] { display: none; }
+#wr-dock .wr-dock-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   pointer-events: none;
 }
-html.wr-reader.wr-immersive:not(.wr-ui) .readerControls {
-  opacity: 0 !important;
-  pointer-events: none;
+#wr-dock .wr-dock-items button {
+  position: relative;
+  opacity: 0;
+  transform: translateY(8px) scale(.9);
 }
+html.wr-dock-open #wr-dock .wr-dock-items { pointer-events: auto; }
+html.wr-dock-open #wr-dock .wr-dock-items button { opacity: 1; transform: none; }
+html.wr-dock-open #wr-dock .wr-dock-main { transform: rotate(90deg); }
+/* 悬停提示 */
+#wr-dock [data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--wr-fg);
+  background: var(--wr-surface);
+  box-shadow: var(--wr-shadow);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(4px, -50%);
+  pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
+}
+#wr-dock [data-tip]:hover::after { opacity: 1; transform: translate(0, -50%); }
+/* 沉浸时淡出，鼠标一动就回来 */
+html.wr-immersive.wr-reader:not(.wr-ui):not(.wr-dock-open) #wr-dock,
+html.wr-panel-open #wr-dock { opacity: 0; pointer-events: none; }
+
+/* ---------- 设置浮窗 ---------- */
+#wr-panel {
+  position: fixed;
+  top: calc(var(--wr-bar-h) + 6px);
+  right: 12px;
+  bottom: 12px;
+  z-index: 2147483005;
+  width: 284px;
+  overflow-y: auto;
+  padding: 16px 16px 20px;
+  border-radius: 14px;
+  color: var(--wr-fg);
+  background: var(--wr-surface);
+  backdrop-filter: blur(28px) saturate(1.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  box-shadow: var(--wr-shadow);
+  font: 13px/1.45 var(--wr-ui-font);
+  opacity: 0;
+  transform: translateX(16px);
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  scrollbar-width: none;
+}
+#wr-panel::-webkit-scrollbar { display: none; }
+html.wr-panel-open #wr-panel { opacity: 1; transform: none; pointer-events: auto; }
+#wr-panel * { box-sizing: border-box; font-family: inherit; }
+#wr-panel em { font-style: normal; font-size: 11px; color: var(--wr-sub); margin-left: 4px; }
+#wr-panel header { display: flex; align-items: center; justify-content: space-between; }
+#wr-panel header b { font-size: 15px; font-weight: 600; }
+#wr-panel .wr-x {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--wr-sub);
+  background: var(--wr-chip);
+  cursor: pointer;
+}
+#wr-panel .wr-x svg { width: 14px; height: 14px; }
+#wr-panel section { margin-top: 18px; }
+#wr-panel section[hidden] { display: none; }
+#wr-panel h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--wr-sub); }
+#wr-panel button { color: inherit; font: inherit; cursor: pointer; }
+#wr-panel button:focus-visible, #wr-panel input:focus-visible { outline: 2px solid var(--wr-accent); outline-offset: 2px; }
+
+#wr-panel .wr-seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--wr-chip); }
+#wr-panel .wr-seg button {
+  flex: 1;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  transition: background-color .15s ease;
+}
+#wr-panel .wr-seg button[aria-pressed="true"] { background: var(--wr-surface); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); font-weight: 600; }
+
+#wr-panel .wr-step { display: flex; align-items: center; gap: 8px; }
+#wr-panel .wr-step button {
+  flex: 1;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--wr-chip);
+  font-size: 15px;
+}
+#wr-panel .wr-step button:first-child { font-size: 12px; }
+#wr-panel .wr-step button:hover { background: var(--wr-chip-hover); }
+#wr-panel .wr-step output { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; color: var(--wr-sub); }
+
+#wr-panel .wr-fonts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: 172px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+#wr-panel .wr-fonts button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--wr-chip);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#wr-panel .wr-fonts button:hover { background: var(--wr-chip-hover); }
+#wr-panel .wr-fonts button[aria-pressed="true"] { border-color: var(--wr-accent); }
+
+#wr-panel .wr-swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+#wr-panel .wr-swatches button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 11px;
+  color: var(--wr-sub);
+}
+#wr-panel .wr-swatches i {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--wr-line);
+}
+#wr-panel .wr-swatches button[aria-pressed="true"] { color: var(--wr-fg); }
+#wr-panel .wr-swatches button[aria-pressed="true"] i { box-shadow: 0 0 0 2px var(--wr-surface), 0 0 0 4px var(--wr-accent); }
+
+#wr-panel .wr-row { display: flex; align-items: center; justify-content: space-between; min-height: 34px; gap: 12px; }
+#wr-panel .wr-row + .wr-seg { margin-top: 6px; }
+#wr-panel .wr-row output { color: var(--wr-sub); font-variant-numeric: tabular-nums; }
+#wr-panel input[type=range] { width: 120px; accent-color: var(--wr-accent); }
+/* 开关 */
+#wr-panel input[type=checkbox] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 10px;
+  background: var(--wr-chip-hover);
+  cursor: pointer;
+  transition: background-color .18s ease;
+}
+#wr-panel input[type=checkbox]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  transition: transform .18s ease;
+}
+#wr-panel input[type=checkbox]:checked { background: var(--wr-accent); }
+#wr-panel input[type=checkbox]:checked::after { transform: translateX(14px); }
+#wr-panel .wr-hint { margin: 8px 0 0; font-size: 11px; color: var(--wr-sub); }
+#wr-panel footer { margin-top: 20px; text-align: center; }
+
+/* 代理操作官方字体面板时把它藏起来 */
+html.wr-proxy .font-panel-content,
+html.wr-proxy .reader-font-control-panel-mask { opacity: 0 !important; }
+
+/* ---------- 沉浸：光标 ---------- */
 html.wr-reader.wr-immersive.wr-idle,
-html.wr-reader.wr-immersive.wr-idle * {
-  cursor: none !important;
-}
+html.wr-reader.wr-immersive.wr-idle * { cursor: none !important; }
 
-/* 纸张底色：正片叠底，白变底色、黑字不变，不依赖正文是 DOM 还是 canvas */
+/* ---------- 纸张底色：正片叠底，白变底色、黑字不变 ---------- */
 #wr-tint {
   position: fixed;
   inset: 0;
@@ -56,85 +348,89 @@ html.wr-reader.wr-tint-paper #wr-tint { background: #f3e9d2; opacity: 1; }
 html.wr-reader.wr-tint-green #wr-tint { background: #d6ead8; opacity: 1; }
 html.wr-reader.wr-tint-dim   #wr-tint { background: #000; mix-blend-mode: normal; opacity: .28; }
 
-/* 章节阅读进度 */
+/* ---------- 章节进度 ---------- */
 #wr-progress {
   position: fixed;
   top: 0;
   left: 0;
   height: 2px;
   width: 0;
-  z-index: 2147483001;
-  background: #1b88ee;
+  z-index: 2147483007;
+  background: var(--wr-accent);
   opacity: 0;
   pointer-events: none;
   transition: width .15s linear, opacity .3s ease;
 }
-html.wr-reader:not(.wr-horizontal) #wr-progress { opacity: .7; }
+html.wr-reader:not(.wr-horizontal) #wr-progress { opacity: .6; }
 
-/* 轻提示 */
+/* ---------- 轻提示 ---------- */
 #wr-toast {
   position: fixed;
   left: 50%;
-  bottom: 48px;
-  z-index: 2147483002;
+  bottom: 32px;
+  z-index: 2147483008;
   transform: translate(-50%, 8px);
-  padding: 8px 16px;
+  padding: 8px 14px;
   border-radius: 999px;
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-  color: #fff;
-  background: rgba(30, 30, 30, .82);
-  backdrop-filter: blur(8px);
+  font: 12px/1.4 var(--wr-ui-font);
+  color: var(--wr-fg);
+  background: var(--wr-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--wr-shadow);
   opacity: 0;
   pointer-events: none;
   transition: opacity .2s ease, transform .2s ease;
 }
 #wr-toast.wr-show { opacity: 1; transform: translate(-50%, 0); }
 
-/* 快捷键速查 */
+/* ---------- 快捷键速查 ---------- */
 #wr-help {
   position: fixed;
   inset: 0;
-  z-index: 2147483003;
+  z-index: 2147483009;
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, .35);
-  font: 13px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  background: rgba(0, 0, 0, .3);
+  font: 13px/1.6 var(--wr-ui-font);
 }
 #wr-help.wr-show { display: flex; }
 #wr-help > div {
-  min-width: 320px;
+  min-width: 340px;
   padding: 20px 24px;
-  border-radius: 12px;
-  color: #222;
-  background: #fff;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+  border-radius: 14px;
+  color: var(--wr-fg);
+  background: var(--wr-surface);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  box-shadow: var(--wr-shadow);
 }
 #wr-help h2 { margin: 0 0 12px; font-size: 15px; }
 #wr-help table { border-collapse: collapse; width: 100%; }
 #wr-help td { padding: 3px 0; }
-#wr-help td:first-child { padding-right: 24px; color: #666; white-space: nowrap; }
+#wr-help td:first-child { padding-right: 24px; white-space: nowrap; }
 #wr-help kbd {
   display: inline-block;
-  min-width: 18px;
+  min-width: 20px;
   padding: 0 6px;
-  border: 1px solid #ddd;
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  font: 12px/18px ui-monospace, Menlo, monospace;
+  border-radius: 5px;
+  font: 11px/20px var(--wr-mono);
   text-align: center;
-  background: #fafafa;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #wr-tint, #wr-progress, #wr-toast,
-  html.wr-reader.wr-immersive .readerTopBar,
-  html.wr-reader.wr-immersive .readerControls { transition: none !important; }
+  background: var(--wr-chip);
 }
 
 /* ---------- 伪装模式：半透明深色 + 终端配色 ---------- */
 html.wr-stealth {
   --wr-fg: #b9b9b9;
+  --wr-sub: #6f6f6f;
+  --wr-surface: rgba(20, 20, 22, .94);
+  --wr-chip: rgba(255, 255, 255, .06);
+  --wr-chip-hover: rgba(255, 255, 255, .1);
+  --wr-line: rgba(255, 255, 255, .08);
+  --wr-accent: var(--wr-fg);
+  --wr-shadow: 0 0 0 .5px rgba(255, 255, 255, .08);
+  --wr-ui-font: var(--wr-mono);
   --wr-filter: brightness(0) invert(.73);
   background: rgba(14, 14, 16, var(--wr-alpha, .7)) !important;
   scrollbar-width: none;
@@ -157,21 +453,22 @@ html.wr-stealth .routerView {
   background: transparent !important;
   box-shadow: none !important;
 }
-html.wr-stealth body,
-html.wr-stealth body *:not(canvas):not(img):not(svg):not(path) {
+html.wr-stealth body *:not(canvas):not(img):not(svg):not(path):not(#wr-bar *) {
   color: var(--wr-fg) !important;
-  border-color: rgba(255, 255, 255, .08) !important;
-  font-family: ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace !important;
+  border-color: var(--wr-line) !important;
+  font-family: var(--wr-mono) !important;
 }
 /* canvas 背景透明，只需把字形统一染成终端色 */
 html.wr-stealth .wr_canvasContainer canvas,
 html.wr-stealth .renderTargetContent canvas { filter: var(--wr-filter); }
 html.wr-stealth img { filter: grayscale(1); opacity: .35; }
 html.wr-stealth .renderTargetWatermark,
-html.wr-stealth #wr-tint,
 html.wr-stealth .readerFooter_button { opacity: .25 !important; }
 html.wr-stealth #wr-tint { display: none; }
-html.wr-stealth #wr-progress { background: var(--wr-fg); opacity: .35 !important; height: 1px; }
+html.wr-stealth #wr-progress { background: var(--wr-fg); opacity: .3 !important; height: 1px; }
+html.wr-stealth #wr-bar .wr-lights button { background: var(--wr-line) !important; }
+html.wr-stealth #wr-bar:hover .wr-lights button { background: var(--wr-sub) !important; }
+html.wr-stealth #wr-bar .wr-title { opacity: 0 !important; }
 /* 浮层需要实底，否则和正文叠在一起看不清。
    注意 .wr_float_panel_container 是常驻的全屏容器，只能给里面的面板上色。 */
 html.wr-stealth .wr_dialog_container,
@@ -182,133 +479,16 @@ html.wr-stealth .readerCatalog,
 html.wr-stealth .readerNotePanel,
 html.wr-stealth .readerAIChatPanel,
 html.wr-stealth .font-panel-content,
-html.wr-stealth .ui-pop-over,
-html.wr-stealth .readerTopBar,
-html.wr-stealth .readerControls_item {
+html.wr-stealth .ui-pop-over {
   background-color: rgba(24, 24, 26, .96) !important;
 }
 /* 书籍自带的底纹和版权图会透出浅色块 */
 html.wr-stealth .wr_readerBackground_opacity,
 html.wr-stealth .wr_readerImage_opacity { display: none !important; }
-/* 伪装时强制沉浸 */
-html.wr-reader.wr-stealth:not(.wr-ui) .readerTopBar,
-html.wr-reader.wr-stealth:not(.wr-ui) .readerControls { opacity: 0 !important; pointer-events: none; }
+/* 伪装时 Dock 平时完全隐身，鼠标一动才出现 */
+html.wr-stealth:not(.wr-ui):not(.wr-dock-open) #wr-dock { opacity: 0; pointer-events: none; }
 
-/* ---------- 设置浮窗 ---------- */
-#wr-fab {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 2147483004;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  color: #555;
-  background: rgba(255, 255, 255, .85);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .15);
-  font: 18px/36px -apple-system, sans-serif;
-  cursor: pointer;
-  transition: opacity .25s ease;
+@media (prefers-reduced-motion: reduce) {
+  #wr-tint, #wr-progress, #wr-toast, #wr-dock, #wr-dock button, #wr-panel,
+  #wr-bar .wr-title, #wr-bar .wr-lights { transition: none !important; }
 }
-html.wr-immersive.wr-reader:not(.wr-ui) #wr-fab,
-html.wr-stealth:not(.wr-ui) #wr-fab { opacity: 0; }
-html.wr-panel-open #wr-fab { opacity: 0; pointer-events: none; }
-html.wr-stealth #wr-fab { color: var(--wr-fg); background: rgba(30, 30, 32, .9); }
-
-#wr-panel {
-  --p-fg: #222;
-  --p-sub: #888;
-  --p-bg: rgba(250, 250, 250, .92);
-  --p-chip: rgba(0, 0, 0, .05);
-  --p-accent: #1b88ee;
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 2147483005;
-  width: 280px;
-  overflow-y: auto;
-  padding: 18px 18px 24px;
-  border-radius: 14px;
-  color: var(--p-fg);
-  background: var(--p-bg);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, .22);
-  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
-  transform: translateX(calc(100% + 24px));
-  transition: transform .22s ease;
-  scrollbar-width: none;
-}
-html.wr-panel-open #wr-panel { transform: none; }
-@media (prefers-color-scheme: dark) {
-  #wr-panel { --p-fg: #e6e6e6; --p-sub: #8a8a8a; --p-bg: rgba(36, 36, 38, .9); --p-chip: rgba(255, 255, 255, .08); }
-}
-html.wr-stealth #wr-panel {
-  --p-fg: var(--wr-fg); --p-sub: #6c6c6c; --p-bg: rgba(18, 18, 20, .94); --p-chip: rgba(255, 255, 255, .07); --p-accent: var(--wr-fg);
-}
-html.wr-stealth #wr-panel * { font-family: ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace !important; }
-
-#wr-panel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-#wr-panel header b { font-size: 15px; }
-#wr-panel .wr-x { border: 0; background: none; color: var(--p-sub); font-size: 18px; cursor: pointer; }
-#wr-panel section { margin-top: 16px; }
-#wr-panel h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--p-sub); }
-#wr-panel .wr-seg { display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--p-chip); }
-#wr-panel .wr-seg button {
-  flex: 1;
-  padding: 5px 0;
-  border: 0;
-  border-radius: 6px;
-  color: inherit;
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-#wr-panel .wr-seg button[aria-pressed="true"] { background: var(--p-bg); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); font-weight: 600; }
-#wr-panel .wr-row { display: flex; align-items: center; justify-content: space-between; min-height: 30px; }
-#wr-panel .wr-row + .wr-row { margin-top: 4px; }
-#wr-panel input[type=range] { width: 130px; accent-color: var(--p-accent); }
-#wr-panel input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--p-accent); }
-#wr-panel .wr-swatches { display: flex; gap: 10px; }
-#wr-panel .wr-swatches button {
-  width: 28px;
-  height: 28px;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  cursor: pointer;
-}
-#wr-panel .wr-swatches button[aria-pressed="true"] { border-color: var(--p-accent); }
-#wr-panel .wr-step { display: flex; align-items: center; gap: 10px; }
-#wr-panel .wr-step button, #wr-panel .wr-btn {
-  min-width: 30px;
-  padding: 4px 10px;
-  border: 0;
-  border-radius: 6px;
-  color: inherit;
-  background: var(--p-chip);
-  font: inherit;
-  cursor: pointer;
-}
-#wr-panel .wr-fonts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-height: 180px; overflow-y: auto; }
-#wr-panel .wr-fonts button {
-  padding: 6px 8px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: inherit;
-  background: var(--p-chip);
-  font-size: 13px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-#wr-panel .wr-fonts button[aria-pressed="true"] { border-color: var(--p-accent); }
-#wr-panel .wr-hint { margin: 6px 0 0; font-size: 11px; color: var(--p-sub); }
-#wr-panel button:focus-visible, #wr-panel input:focus-visible { outline: 2px solid var(--p-accent); outline-offset: 2px; }
-
-/* 代理操作官方字体面板时把它藏起来 */
-html.wr-proxy .font-panel-content,
-html.wr-proxy .reader-font-control-panel-mask { opacity: 0 !important; }
