@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -26,6 +27,8 @@ const (
 	siteHost = "weread.qq.com"
 	// WKWebView 默认 UA 不带 Version/Safari，部分页面会降级，补成桌面 Safari。
 	uaSuffix = "Version/18.0 Safari/605.1.15"
+	// 老板键：全局隐藏/显示窗口。
+	bossKey = "Ctrl+OptionOrAlt+Space"
 )
 
 // WEREAD_DEBUG=1 时打印页面消息，便于排查注入脚本。
@@ -40,6 +43,7 @@ type shell struct {
 
 	immersiveItem *application.MenuItem
 	autoItem      *application.MenuItem
+	stealthItem   *application.MenuItem
 }
 
 func main() {
@@ -60,10 +64,27 @@ func main() {
 
 	s.app.Menu.Set(s.buildMenu())
 	s.win = s.newMainWindow()
+	s.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
+		s.mu.Lock()
+		prefs := s.cfg.Prefs
+		s.mu.Unlock()
+		applyWindowLook(s.win, prefs)
+	})
+	if err := s.app.GlobalShortcut.Register(bossKey, s.toggleVisible); err != nil {
+		log.Printf("register boss key: %v", err)
+	}
 
 	if err := s.app.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// startURL 允许用 WEREAD_URL 覆盖启动页，便于调试指定页面。
+func startURL() string {
+	if u := os.Getenv("WEREAD_URL"); u != "" {
+		return u
+	}
+	return homeURL
 }
 
 func (s *shell) newMainWindow() *application.WebviewWindow {
@@ -74,11 +95,13 @@ func (s *shell) newMainWindow() *application.WebviewWindow {
 		Height:           800,
 		MinWidth:         420,
 		MinHeight:        360,
-		URL:              homeURL,
+		URL:              startURL(),
 		AlwaysOnTop:      s.cfg.AlwaysOnTop,
 		BackgroundColour: application.NewRGB(255, 255, 255),
 		JS:               s.injectScript(),
 		Mac: application.MacWindow{
+			// 透明窗口 + 透明 webview，平时由 applyWindowLook 恢复为不透明。
+			Backdrop: application.MacBackdropTransparent,
 			TitleBar: application.MacTitleBar{
 				AppearsTransparent: true,
 			},
@@ -106,7 +129,7 @@ func (s *shell) injectScript() string {
 	prefs, _ := json.Marshal(s.cfg.Prefs)
 	s.mu.Unlock()
 	css, _ := json.Marshal(readerCSS)
-	return "window.__WR_PREFS__=" + string(prefs) + ";window.__WR_CSS__=" + string(css) + ";\n" + readerJS
+	return fmt.Sprintf("window.__WR_PREFS__=%s;window.__WR_CSS__=%s;window.__WR_DEBUG__=%t;\n%s", prefs, css, debug, readerJS)
 }
 
 func (s *shell) buildMenu() *application.Menu {
@@ -136,28 +159,17 @@ func (s *shell) buildMenu() *application.Menu {
 	})
 	read.AddSeparator()
 
-	width := read.AddSubmenu("版心宽度")
-	for i, opt := range []struct{ key, label string }{
-		{"narrow", "窄"}, {"medium", "适中"}, {"wide", "宽"}, {"full", "铺满"},
-	} {
-		key := opt.key
-		width.AddRadio(opt.label, s.cfg.Prefs.Width == key).
-			SetAccelerator("CmdOrCtrl+" + string(rune('1'+i))).
-			OnClick(func(*application.Context) { s.updatePrefs(func(p *Prefs) { p.Width = key }) })
-	}
-
-	tint := read.AddSubmenu("纸张底色")
-	for _, opt := range []struct{ key, label string }{
-		{"none", "原色"}, {"paper", "米黄纸"}, {"green", "护眼绿"}, {"dim", "夜间暗化"},
-	} {
-		key := opt.key
-		tint.AddRadio(opt.label, s.cfg.Prefs.Tint == key).
-			OnClick(func(*application.Context) { s.updatePrefs(func(p *Prefs) { p.Tint = key }) })
-	}
-	read.AddSeparator()
-	read.AddCheckbox("启动时回到上次阅读", s.cfg.Prefs.RestoreLast).OnClick(func(ctx *application.Context) {
-		s.updatePrefs(func(p *Prefs) { p.RestoreLast = ctx.IsChecked() })
+	read.Add("阅读设置…").SetAccelerator("CmdOrCtrl+,").OnClick(func(*application.Context) {
+		s.callJS("panel", nil)
 	})
+	read.AddSeparator()
+
+	stealth := m.AddSubmenu("伪装")
+	s.stealthItem = stealth.AddCheckbox("伪装模式", s.cfg.Prefs.Stealth).SetAccelerator("CmdOrCtrl+Shift+M")
+	s.stealthItem.OnClick(func(ctx *application.Context) { s.setStealth(ctx.IsChecked()) })
+	stealth.AddSeparator()
+	stealth.AddSeparator()
+	stealth.Add("隐藏 / 显示窗口（全局 ⌃⌥空格）").OnClick(func(*application.Context) { s.toggleVisible() })
 
 	view := m.AddSubmenu("显示")
 	view.AddRole(application.Reload)
@@ -196,6 +208,26 @@ func (s *shell) updatePrefs(fn func(*Prefs)) {
 		log.Printf("save config: %v", err)
 	}
 	s.callJS("apply", cfg.Prefs)
+}
+
+func (s *shell) setStealth(on bool) {
+	s.updatePrefs(func(p *Prefs) { p.Stealth = on })
+	s.mu.Lock()
+	prefs := s.cfg.Prefs
+	s.mu.Unlock()
+	applyWindowLook(s.win, prefs)
+	s.stealthItem.SetChecked(on)
+	s.menu.Update()
+}
+
+func (s *shell) toggleVisible() {
+	if s.win.IsVisible() {
+		s.callJS("autoScroll", false)
+		s.win.Hide()
+		return
+	}
+	s.win.Show()
+	s.win.Focus()
 }
 
 func (s *shell) callJS(method string, arg any) {
@@ -238,14 +270,24 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 		// 页面内按 Esc 或翻到章末会停止自动滚动，同步菜单勾选。
 		s.autoItem.SetChecked(msg.Value == "on")
 		s.menu.Update()
-	case "immersive":
-		on := msg.Value == "on"
+	case "prefs":
+		// 设置浮窗改动后回传完整偏好，这里落盘并同步窗口与菜单。
+		var p Prefs
+		if err := json.Unmarshal([]byte(msg.Value), &p); err != nil {
+			return
+		}
+		p.sanitize()
 		s.mu.Lock()
-		s.cfg.Prefs.Immersive = on
+		old := s.cfg.Prefs
+		s.cfg.Prefs = p
 		cfg := s.cfg
 		s.mu.Unlock()
 		_ = saveConfig(cfg)
-		s.immersiveItem.SetChecked(on)
+		if old.Stealth != p.Stealth || old.Theme != p.Theme {
+			applyWindowLook(s.win, p)
+		}
+		s.immersiveItem.SetChecked(p.Immersive)
+		s.stealthItem.SetChecked(p.Stealth)
 		s.menu.Update()
 	case "open":
 		u, err := url.Parse(msg.Value)

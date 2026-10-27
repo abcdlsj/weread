@@ -7,13 +7,15 @@ html.wr-reader.wr-w-wide   { --wr-w: 1120px; }
 html.wr-reader.wr-w-full   { --wr-w: calc(100vw - 120px); }
 
 /* 版心宽度：正文、顶栏同宽，右侧控件贴着版心外沿 */
+/* 版心随窗口收缩，窄窗口下不溢出；右侧留出官方控件的位置 */
+html.wr-reader { --wr-cw: min(var(--wr-w), calc(100vw - 112px)); }
 html.wr-reader:not(.wr-horizontal) .app_content,
 html.wr-reader:not(.wr-horizontal) .readerTopBar {
-  max-width: var(--wr-w) !important;
-  width: var(--wr-w) !important;
+  max-width: var(--wr-cw) !important;
+  width: var(--wr-cw) !important;
 }
 html.wr-reader:not(.wr-horizontal) .readerControls {
-  left: calc(50% + var(--wr-w) / 2 + 24px) !important;
+  left: calc(50% + var(--wr-cw) / 2 + 24px) !important;
   margin-left: 0 !important;
 }
 html.wr-reader.wr-w-full:not(.wr-horizontal) .readerControls {
@@ -129,3 +131,184 @@ html.wr-reader:not(.wr-horizontal) #wr-progress { opacity: .7; }
   html.wr-reader.wr-immersive .readerTopBar,
   html.wr-reader.wr-immersive .readerControls { transition: none !important; }
 }
+
+/* ---------- 伪装模式：半透明深色 + 终端配色 ---------- */
+html.wr-stealth {
+  --wr-fg: #b9b9b9;
+  --wr-filter: brightness(0) invert(.73);
+  background: rgba(14, 14, 16, var(--wr-alpha, .7)) !important;
+  scrollbar-width: none;
+}
+html.wr-stealth.wr-fg-green { --wr-fg: #5fd38a; --wr-filter: brightness(0) invert(1) sepia(1) saturate(4) hue-rotate(75deg) brightness(.82); }
+html.wr-stealth.wr-fg-amber { --wr-fg: #e3ad5c; --wr-filter: brightness(0) invert(1) sepia(1) saturate(2.2) hue-rotate(-12deg) brightness(.9); }
+html.wr-stealth::-webkit-scrollbar { display: none; }
+
+html.wr-stealth body,
+html.wr-stealth .app,
+html.wr-stealth .app_content,
+html.wr-stealth .readerContent,
+html.wr-stealth .readerChapterContent,
+html.wr-stealth .renderTargetContainer,
+html.wr-stealth .wr_canvasContainer,
+html.wr-stealth .readerFooter,
+html.wr-stealth .navBar,
+html.wr-stealth .shelf_container,
+html.wr-stealth .routerView {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.wr-stealth body,
+html.wr-stealth body *:not(canvas):not(img):not(svg):not(path) {
+  color: var(--wr-fg) !important;
+  border-color: rgba(255, 255, 255, .08) !important;
+  font-family: ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace !important;
+}
+/* canvas 背景透明，只需把字形统一染成终端色 */
+html.wr-stealth .wr_canvasContainer canvas,
+html.wr-stealth .renderTargetContent canvas { filter: var(--wr-filter); }
+html.wr-stealth img { filter: grayscale(1); opacity: .35; }
+html.wr-stealth .renderTargetWatermark,
+html.wr-stealth #wr-tint,
+html.wr-stealth .readerFooter_button { opacity: .25 !important; }
+html.wr-stealth #wr-tint { display: none; }
+html.wr-stealth #wr-progress { background: var(--wr-fg); opacity: .35 !important; height: 1px; }
+/* 浮层需要实底，否则和正文叠在一起看不清。
+   注意 .wr_float_panel_container 是常驻的全屏容器，只能给里面的面板上色。 */
+html.wr-stealth .wr_dialog_container,
+html.wr-stealth .reader_float_panel_content_wrapper,
+html.wr-stealth .reader_float_panel_header_wrapper,
+html.wr-stealth .reader_float_panel_footer_wrapper,
+html.wr-stealth .readerCatalog,
+html.wr-stealth .readerNotePanel,
+html.wr-stealth .readerAIChatPanel,
+html.wr-stealth .font-panel-content,
+html.wr-stealth .ui-pop-over,
+html.wr-stealth .readerTopBar,
+html.wr-stealth .readerControls_item {
+  background-color: rgba(24, 24, 26, .96) !important;
+}
+/* 书籍自带的底纹和版权图会透出浅色块 */
+html.wr-stealth .wr_readerBackground_opacity,
+html.wr-stealth .wr_readerImage_opacity { display: none !important; }
+/* 伪装时强制沉浸 */
+html.wr-reader.wr-stealth:not(.wr-ui) .readerTopBar,
+html.wr-reader.wr-stealth:not(.wr-ui) .readerControls { opacity: 0 !important; pointer-events: none; }
+
+/* ---------- 设置浮窗 ---------- */
+#wr-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483004;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  color: #555;
+  background: rgba(255, 255, 255, .85);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .15);
+  font: 18px/36px -apple-system, sans-serif;
+  cursor: pointer;
+  transition: opacity .25s ease;
+}
+html.wr-immersive.wr-reader:not(.wr-ui) #wr-fab,
+html.wr-stealth:not(.wr-ui) #wr-fab { opacity: 0; }
+html.wr-panel-open #wr-fab { opacity: 0; pointer-events: none; }
+html.wr-stealth #wr-fab { color: var(--wr-fg); background: rgba(30, 30, 32, .9); }
+
+#wr-panel {
+  --p-fg: #222;
+  --p-sub: #888;
+  --p-bg: rgba(250, 250, 250, .92);
+  --p-chip: rgba(0, 0, 0, .05);
+  --p-accent: #1b88ee;
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2147483005;
+  width: 280px;
+  overflow-y: auto;
+  padding: 18px 18px 24px;
+  border-radius: 14px;
+  color: var(--p-fg);
+  background: var(--p-bg);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .22);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif !important;
+  transform: translateX(calc(100% + 24px));
+  transition: transform .22s ease;
+  scrollbar-width: none;
+}
+html.wr-panel-open #wr-panel { transform: none; }
+@media (prefers-color-scheme: dark) {
+  #wr-panel { --p-fg: #e6e6e6; --p-sub: #8a8a8a; --p-bg: rgba(36, 36, 38, .9); --p-chip: rgba(255, 255, 255, .08); }
+}
+html.wr-stealth #wr-panel {
+  --p-fg: var(--wr-fg); --p-sub: #6c6c6c; --p-bg: rgba(18, 18, 20, .94); --p-chip: rgba(255, 255, 255, .07); --p-accent: var(--wr-fg);
+}
+html.wr-stealth #wr-panel * { font-family: ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace !important; }
+
+#wr-panel header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+#wr-panel header b { font-size: 15px; }
+#wr-panel .wr-x { border: 0; background: none; color: var(--p-sub); font-size: 18px; cursor: pointer; }
+#wr-panel section { margin-top: 16px; }
+#wr-panel h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--p-sub); }
+#wr-panel .wr-seg { display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: var(--p-chip); }
+#wr-panel .wr-seg button {
+  flex: 1;
+  padding: 5px 0;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+#wr-panel .wr-seg button[aria-pressed="true"] { background: var(--p-bg); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); font-weight: 600; }
+#wr-panel .wr-row { display: flex; align-items: center; justify-content: space-between; min-height: 30px; }
+#wr-panel .wr-row + .wr-row { margin-top: 4px; }
+#wr-panel input[type=range] { width: 130px; accent-color: var(--p-accent); }
+#wr-panel input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--p-accent); }
+#wr-panel .wr-swatches { display: flex; gap: 10px; }
+#wr-panel .wr-swatches button {
+  width: 28px;
+  height: 28px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+#wr-panel .wr-swatches button[aria-pressed="true"] { border-color: var(--p-accent); }
+#wr-panel .wr-step { display: flex; align-items: center; gap: 10px; }
+#wr-panel .wr-step button, #wr-panel .wr-btn {
+  min-width: 30px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: var(--p-chip);
+  font: inherit;
+  cursor: pointer;
+}
+#wr-panel .wr-fonts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; max-height: 180px; overflow-y: auto; }
+#wr-panel .wr-fonts button {
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  background: var(--p-chip);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+#wr-panel .wr-fonts button[aria-pressed="true"] { border-color: var(--p-accent); }
+#wr-panel .wr-hint { margin: 6px 0 0; font-size: 11px; color: var(--p-sub); }
+#wr-panel button:focus-visible, #wr-panel input:focus-visible { outline: 2px solid var(--p-accent); outline-offset: 2px; }
+
+/* 代理操作官方字体面板时把它藏起来 */
+html.wr-proxy .font-panel-content,
+html.wr-proxy .reader-font-control-panel-mask { opacity: 0 !important; }
