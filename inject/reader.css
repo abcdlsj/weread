@@ -1,0 +1,131 @@
+/* 只在阅读页生效的增强样式；开关由 <html> 上的 wr-* class 控制。 */
+
+html.wr-reader { --wr-w: 800px; }
+html.wr-reader.wr-w-narrow { --wr-w: 680px; }
+html.wr-reader.wr-w-medium { --wr-w: 860px; }
+html.wr-reader.wr-w-wide   { --wr-w: 1120px; }
+html.wr-reader.wr-w-full   { --wr-w: calc(100vw - 120px); }
+
+/* 版心宽度：正文、顶栏同宽，右侧控件贴着版心外沿 */
+html.wr-reader:not(.wr-horizontal) .app_content,
+html.wr-reader:not(.wr-horizontal) .readerTopBar {
+  max-width: var(--wr-w) !important;
+  width: var(--wr-w) !important;
+}
+html.wr-reader:not(.wr-horizontal) .readerControls {
+  left: calc(50% + var(--wr-w) / 2 + 24px) !important;
+  margin-left: 0 !important;
+}
+html.wr-reader.wr-w-full:not(.wr-horizontal) .readerControls {
+  left: auto !important;
+  right: 16px !important;
+}
+
+/* 沉浸模式：工具栏淡出，鼠标移动或靠近边缘时浮现 */
+html.wr-reader.wr-immersive .readerTopBar,
+html.wr-reader.wr-immersive .readerControls {
+  transition: opacity .25s ease, transform .25s ease !important;
+}
+html.wr-reader.wr-immersive:not(.wr-ui) .readerTopBar {
+  opacity: 0 !important;
+  transform: translateY(-8px);
+  pointer-events: none;
+}
+html.wr-reader.wr-immersive:not(.wr-ui) .readerControls {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+html.wr-reader.wr-immersive.wr-idle,
+html.wr-reader.wr-immersive.wr-idle * {
+  cursor: none !important;
+}
+
+/* 纸张底色：正片叠底，白变底色、黑字不变，不依赖正文是 DOM 还是 canvas */
+#wr-tint {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  opacity: 0;
+  transition: opacity .3s ease, background-color .3s ease;
+}
+html.wr-reader.wr-tint-paper #wr-tint { background: #f3e9d2; opacity: 1; }
+html.wr-reader.wr-tint-green #wr-tint { background: #d6ead8; opacity: 1; }
+html.wr-reader.wr-tint-dim   #wr-tint { background: #000; mix-blend-mode: normal; opacity: .28; }
+
+/* 章节阅读进度 */
+#wr-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 0;
+  z-index: 2147483001;
+  background: #1b88ee;
+  opacity: 0;
+  pointer-events: none;
+  transition: width .15s linear, opacity .3s ease;
+}
+html.wr-reader:not(.wr-horizontal) #wr-progress { opacity: .7; }
+
+/* 轻提示 */
+#wr-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 48px;
+  z-index: 2147483002;
+  transform: translate(-50%, 8px);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  color: #fff;
+  background: rgba(30, 30, 30, .82);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+}
+#wr-toast.wr-show { opacity: 1; transform: translate(-50%, 0); }
+
+/* 快捷键速查 */
+#wr-help {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483003;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .35);
+  font: 13px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+#wr-help.wr-show { display: flex; }
+#wr-help > div {
+  min-width: 320px;
+  padding: 20px 24px;
+  border-radius: 12px;
+  color: #222;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+#wr-help h2 { margin: 0 0 12px; font-size: 15px; }
+#wr-help table { border-collapse: collapse; width: 100%; }
+#wr-help td { padding: 3px 0; }
+#wr-help td:first-child { padding-right: 24px; color: #666; white-space: nowrap; }
+#wr-help kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border: 1px solid #ddd;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font: 12px/18px ui-monospace, Menlo, monospace;
+  text-align: center;
+  background: #fafafa;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #wr-tint, #wr-progress, #wr-toast,
+  html.wr-reader.wr-immersive .readerTopBar,
+  html.wr-reader.wr-immersive .readerControls { transition: none !important; }
+}
