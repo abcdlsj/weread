@@ -28,7 +28,7 @@
   const prefs = Object.assign(
     {
       theme: 'auto', width: 'medium', tint: 'none', immersive: true, restoreLast: true, scrollSpeed: 40,
-      typo: false, lineHeight: 1.9, paraSpacing: 0.8, letterSpacing: 0, indent: true,
+      typo: false, lineHeight: 1.9, paraSpacing: 0.8, letterSpacing: 0, indent: true, trimTop: true,
       stealth: false, stealthAlpha: 70, stealthColor: 'gray',
     },
     window.__WR_PREFS__ || {},
@@ -214,6 +214,7 @@
     </section>
     <section data-reader class="wr-typo">
       <h3>排版</h3>
+      ${toggle('trimTop', '收紧章首空白')}
       ${toggle('typo', '自定义排版')}
       <div class="wr-typo-body">
         ${slider('lineHeight', '行高', 1.4, 2.8, 0.1, (v) => `${v.toFixed(1)}`)}
@@ -338,6 +339,7 @@
     root.classList.toggle('wr-immersive', !!prefs.immersive);
     root.classList.toggle('wr-stealth', !!prefs.stealth);
     root.classList.toggle('wr-night', isNight());
+    root.classList.toggle('wr-trim', !!prefs.trimTop);
     syncDark();
     for (const c of [...root.classList]) {
       if (/^wr-(w|tint|fg)-/.test(c)) root.classList.remove(c);
@@ -364,13 +366,14 @@
     t.finished.finally(() => { transitioning = false; });
   };
   let booted = false;
-  const VISUAL = ['width', 'tint', 'stealth', 'stealthColor', 'theme', 'typo', 'lineHeight', 'paraSpacing', 'letterSpacing', 'indent'];
+  const TYPO_KEYS = ['typo', 'lineHeight', 'paraSpacing', 'letterSpacing', 'indent', 'trimTop'];
+  const VISUAL = ['width', 'tint', 'stealth', 'stealthColor', 'theme', ...TYPO_KEYS];
 
   let speed = prefs.scrollSpeed || 40;
   const apply = (next) => {
     const changed = Object.keys(next || {}).filter((k) => prefs[k] !== next[k]);
     if (booted && changed.some((k) => VISUAL.includes(k))) {
-      const typo = changed.some((k) => ['typo', 'lineHeight', 'paraSpacing', 'letterSpacing', 'indent'].includes(k));
+      const typo = changed.some((k) => TYPO_KEYS.includes(k));
       smooth(() => applyNow(next, changed), typo ? 1500 : changed.includes('width') ? 250 : changed.includes('theme') ? 200 : 0);
       return;
     }
@@ -417,7 +420,7 @@
     if (!prefs.typo) return '';
     // 引擎自己解析这段 CSS，不认 :is() 之类的新语法，只用最基础的选择器列表。
     const p = ['.content', 'p', '.bodyContent', '.text'].map((c) => `.readerChapterContent ${c}`).join(',');
-    return `${TYPO_MARK}${p}{line-height:${prefs.lineHeight}em !important;margin-top:0 !important;margin-bottom:${prefs.paraSpacing}em !important;`
+    return `${p}{line-height:${prefs.lineHeight}em !important;margin-top:0 !important;margin-bottom:${prefs.paraSpacing}em !important;`
       + `letter-spacing:${prefs.letterSpacing}em !important;text-indent:${prefs.indent ? '2em' : '0'} !important;text-align:justify !important}`;
   };
   // 官方没有对外的重排接口；容器宽度变化会触发重排，所以临时把宽度改 1px 再改回来。
@@ -446,15 +449,49 @@
       }, 600);
     }, 150);
   };
+  // 有的书在样式表里给章首插图、标题写了很大的上边距（如 margin: 30% auto），
+  // 把章首推到屏幕中间。逐条解析书的样式，把过大的上边距压到 1em。
+  const TOO_BIG = { '%': 8, em: 2.5, rem: 2.5, px: 48 };
+  const firstLen = (v) => {
+    const m = String(v).trim().match(/^(-?[\d.]+)(%|em|rem|px)?/);
+    return m ? { n: parseFloat(m[1]), u: m[2] || 'px' } : null;
+  };
+  const isBig = (len) => len && len.n > (TOO_BIG[len.u] ?? Infinity);
+  // 引擎不一定按层叠规则用 margin-top 覆盖 margin 简写，所以简写就整条重写，只改第一个值。
+  const LEN = /-?[\d.]+(?:%|em|rem|px)?|auto/g;
+  const trimCSS = (base) => {
+    if (!prefs.trimTop) return '';
+    const out = [];
+    for (const [, sel, body] of base.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (sel.includes('@')) continue;
+      const fix = [];
+      for (const prop of ['margin', 'padding']) {
+        const small = prop === 'margin' ? '1em' : '0';
+        const top = body.match(new RegExp(`(?:^|;)\\s*${prop}-top\\s*:\\s*([^;!]+)`));
+        if (top && isBig(firstLen(top[1]))) fix.push(`${prop}-top:${small} !important`);
+        const short = body.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;!]+)`));
+        const parts = short ? short[1].match(LEN) || [] : [];
+        if (parts.length && isBig(firstLen(parts[0]))) {
+          // 简写只有一两个值时，第一个值同时管上下或四边，补全成四值再改上边。
+          const [t, r = t, b = t, l = r] = parts;
+          fix.push(`${prop}:${small} ${r} ${b} ${l} !important`);
+        }
+      }
+      if (fix.length) out.push(`${sel.trim()}{${fix.join(';')}}`);
+    }
+    return out.join('');
+  };
+
   let appliedTypo = null;
   const syncTypo = () => {
     const host = $(SEL.engineStyleHost);
     const st = host && host.querySelector(':scope > style');
     if (!st) return;
-    const want = typoCSS();
     const text = st.textContent;
     const i = text.indexOf(TYPO_MARK);
     const base = i < 0 ? text : text.slice(0, i);
+    const extra = typoCSS() + trimCSS(base);
+    const want = extra ? TYPO_MARK + extra : '';
     if (text === base + want) return;
     st.textContent = base + want;
     // 官方换章时会重写这个 <style>，这时它自己会排版，不用再触发一次。

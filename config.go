@@ -21,6 +21,7 @@ type Prefs struct {
 	ParaSpacing   float64 `json:"paraSpacing"`   // 段间距，em
 	LetterSpacing float64 `json:"letterSpacing"` // 字间距，em
 	Indent        bool    `json:"indent"`        // 首行缩进两字
+	TrimTop       bool    `json:"trimTop"`       // 压缩章首空白，与自定义排版无关，单独生效
 
 	// 伪装模式：窗口半透明、深色背景、终端配色，可贴在终端旁边。
 	Stealth      bool   `json:"stealth"`
@@ -50,6 +51,7 @@ func defaultConfig() Config {
 		LineHeight:   1.9,
 		ParaSpacing:  0.8,
 		Indent:       true,
+		TrimTop:      true,
 		StealthAlpha: 70,
 		StealthColor: "gray",
 	}}

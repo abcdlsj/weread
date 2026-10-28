@@ -77,6 +77,11 @@ html.wr-reader .readerFooter_button {
 }
 html.wr-reader .readerFooter_button:hover { color: var(--wr-fg) !important; border-color: var(--wr-sub) !important; }
 
+/* 收紧章首：顶部留白只保留标题条高度，“上一章”一行变矮、去掉下边距 */
+html.wr-reader.wr-trim .readerContent .app_content { padding-top: var(--wr-bar-h) !important; }
+html.wr-reader.wr-trim .readerContentHeader { height: 28px !important; margin-bottom: 0 !important; }
+html.wr-reader.wr-trim .readerHeaderButton { height: 28px !important; line-height: 28px !important; }
+
 /* 上下边缘渐隐 */
 #wr-fade-top, #wr-fade-bottom {
   position: fixed;
