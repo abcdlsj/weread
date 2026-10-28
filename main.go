@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -42,6 +43,8 @@ type shell struct {
 	win  *application.WebviewWindow
 	menu *application.Menu
 
+	saveTimer *time.Timer
+
 	immersiveItem *application.MenuItem
 	autoItem      *application.MenuItem
 	stealthItem   *application.MenuItem
@@ -60,7 +63,6 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		RawMessageHandler: s.onMessage,
-		OnShutdown:        s.persistWindow,
 	})
 
 	s.app.Menu.Set(s.buildMenu())
@@ -70,6 +72,8 @@ func main() {
 		s.mu.Lock()
 		prefs := s.cfg.Prefs
 		s.mu.Unlock()
+		s.restoreBounds()
+		s.ensureOnScreen()
 		s.win.Show()
 		s.win.Focus()
 		applyWindowLook(s.win, prefs)
@@ -78,6 +82,15 @@ func main() {
 		log.Printf("register boss key: %v", err)
 	}
 
+	if os.Getenv("WR_PROBE") != "" {
+		go func() {
+			time.Sleep(12 * time.Second)
+			js, _ := os.ReadFile("/tmp/perf.js")
+			s.win.ExecJS(string(js))
+			time.Sleep(40 * time.Second)
+			s.app.Quit()
+		}()
+	}
 	if err := s.app.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -129,16 +142,17 @@ func (s *shell) newMainWindow() *application.WebviewWindow {
 			},
 		},
 	}
-	if b := s.cfg.Window; b != nil && b.Width > 0 && b.Height > 0 {
+	if b := s.cfg.Window; b != nil && b.Width >= opts.MinWidth && b.Height >= opts.MinHeight {
 		opts.Width, opts.Height = b.Width, b.Height
 		opts.InitialPosition = application.WindowXY
 		opts.X, opts.Y = b.X, b.Y
 	}
 
 	w := s.app.Window.NewWithOptions(opts)
-	w.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
-		s.persistWindow()
-	})
+	// 退出时窗口已销毁，读不到位置；所以在拖动、缩放时就记下来。
+	for _, ev := range []events.WindowEventType{events.Common.WindowDidMove, events.Common.WindowDidResize} {
+		w.OnWindowEvent(ev, func(*application.WindowEvent) { s.persistWindowSoon() })
+	}
 	return w
 }
 
@@ -350,11 +364,24 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 	}
 }
 
+// persistWindowSoon 在窗口停止移动、缩放 500ms 后保存位置，避免拖动时频繁写盘。
+func (s *shell) persistWindowSoon() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.saveTimer != nil {
+		s.saveTimer.Stop()
+	}
+	s.saveTimer = time.AfterFunc(500*time.Millisecond, s.persistWindow)
+}
+
 func (s *shell) persistWindow() {
-	if s.win == nil || s.win.IsMinimised() || s.win.IsFullscreen() {
+	if s.win == nil || s.win.IsMinimised() || s.win.IsFullscreen() || s.win.IsMaximised() {
 		return
 	}
 	b := s.win.Bounds()
+	if b.Width <= 0 || b.Height <= 0 {
+		return
+	}
 	s.mu.Lock()
 	s.cfg.Window = &Bounds{X: b.X, Y: b.Y, Width: b.Width, Height: b.Height}
 	cfg := s.cfg
@@ -362,4 +389,29 @@ func (s *shell) persistWindow() {
 	if err := saveConfig(cfg); err != nil {
 		log.Printf("save config: %v", err)
 	}
+}
+
+// restoreBounds 用与 Bounds() 对称的 SetBounds 恢复窗口。
+// 只靠创建参数里的 X/Y/宽高，每次重启都会偏移几个像素，越积越多。
+func (s *shell) restoreBounds() {
+	s.mu.Lock()
+	b := s.cfg.Window
+	s.mu.Unlock()
+	if b == nil || b.Width <= 0 || b.Height <= 0 {
+		return
+	}
+	s.win.SetBounds(application.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: b.Height})
+}
+
+// ensureOnScreen 在上次所在的显示器已断开时，把窗口挪回主屏居中。
+func (s *shell) ensureOnScreen() {
+	b := s.win.Bounds()
+	for _, sc := range s.app.Screen.GetAll() {
+		wa := sc.WorkArea
+		// 标题条区域至少有 100×30 落在某块屏幕里，才算拖得回来。
+		if b.X+b.Width-100 > wa.X && b.X+100 < wa.X+wa.Width && b.Y >= wa.Y-10 && b.Y+30 < wa.Y+wa.Height {
+			return
+		}
+	}
+	s.win.Center()
 }
