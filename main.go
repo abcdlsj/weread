@@ -82,15 +82,6 @@ func main() {
 		log.Printf("register boss key: %v", err)
 	}
 
-	if os.Getenv("WR_PROBE") != "" {
-		go func() {
-			time.Sleep(12 * time.Second)
-			js, _ := os.ReadFile("/tmp/perf.js")
-			s.win.ExecJS(string(js))
-			time.Sleep(40 * time.Second)
-			s.app.Quit()
-		}()
-	}
 	if err := s.app.Run(); err != nil {
 		log.Fatal(err)
 	}
