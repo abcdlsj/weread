@@ -51,6 +51,45 @@ html:not(.wr-reader) .navBar { top: 0 !important; padding-top: var(--wr-bar-h) !
 html:not(.wr-reader) .app { padding-top: var(--wr-bar-h); }
 html.wr-reader .readerContent .app_content { padding-top: calc(var(--wr-bar-h) + 12px) !important; }
 
+/* ---------- 阅读页整体：同色铺满、隐藏滚动条、弱化官方按钮 ---------- */
+html.wr-reader:not(.wr-stealth) { scrollbar-width: none; }
+html.wr-reader:not(.wr-stealth)::-webkit-scrollbar { display: none; }
+html.wr-reader:not(.wr-stealth),
+html.wr-reader:not(.wr-stealth) body { background-color: var(--wr-page, inherit) !important; }
+html.wr-reader:not(.wr-stealth) .app_content { box-shadow: none !important; }
+/* 章首“上一章”和章末“下一页 / 下一章”：从实心大按钮改成轻量的文字按钮 */
+html.wr-reader .readerContentHeader { opacity: .35; transition: opacity .2s ease; }
+html.wr-reader .readerContentHeader:hover { opacity: 1; }
+html.wr-reader .readerHeaderButton { color: var(--wr-sub) !important; font-weight: 400 !important; font-size: 13px !important; }
+html.wr-reader .readerFooter_button {
+  width: auto !important;
+  min-width: 0 !important;
+  height: 36px !important;
+  padding: 0 28px !important;
+  border: 1px solid var(--wr-line) !important;
+  border-radius: 999px !important;
+  color: var(--wr-sub) !important;
+  background: transparent !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  letter-spacing: .1em;
+  transition: color .2s ease, border-color .2s ease;
+}
+html.wr-reader .readerFooter_button:hover { color: var(--wr-fg) !important; border-color: var(--wr-sub) !important; }
+
+/* 上下边缘渐隐 */
+#wr-fade-top, #wr-fade-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: none;
+  pointer-events: none;
+}
+#wr-fade-top { top: 0; height: calc(var(--wr-bar-h) + 24px); background: linear-gradient(var(--wr-page) 45%, transparent); }
+#wr-fade-bottom { bottom: 0; height: 40px; background: linear-gradient(transparent, var(--wr-page)); }
+html.wr-reader:not(.wr-stealth):not(.wr-horizontal) :is(#wr-fade-top, #wr-fade-bottom) { display: block; }
+
 /* ---------- 版心宽度，随窗口收缩 ---------- */
 html.wr-reader { --wr-w: 860px; }
 html.wr-reader.wr-w-narrow { --wr-w: 680px; }
@@ -103,8 +142,9 @@ html.wr-reader:not(.wr-horizontal) .app_content {
   opacity: .8;
   transition: opacity .25s ease;
 }
-html.wr-reader.wr-immersive:not(.wr-ui) #wr-bar .wr-title,
-html.wr-reader.wr-immersive:not(.wr-ui) #wr-bar .wr-lights { opacity: 0; }
+/* 阅读页标题条只在鼠标移上去时出现，平时只留一片干净的页面 */
+html.wr-reader #wr-bar .wr-title,
+html.wr-reader #wr-bar .wr-lights { opacity: 0; }
 #wr-bar:hover .wr-title, #wr-bar:hover .wr-lights { opacity: 1 !important; }
 
 /* ---------- 悬浮 Dock ---------- */
@@ -137,6 +177,11 @@ html.wr-reader.wr-immersive:not(.wr-ui) #wr-bar .wr-lights { opacity: 0; }
   transition: transform .18s ease, opacity .18s ease, background-color .15s ease;
 }
 #wr-dock button:hover { background: var(--wr-chip-hover); }
+/* 主按钮平时退到背景里，靠近或展开时才清晰 */
+#wr-dock .wr-dock-main { width: 32px; height: 32px; opacity: .45; box-shadow: none; }
+#wr-dock:hover .wr-dock-main,
+html.wr-dock-open #wr-dock .wr-dock-main,
+#wr-dock .wr-dock-main:focus-visible { opacity: 1; box-shadow: var(--wr-shadow); }
 #wr-dock button:focus-visible { outline: 2px solid var(--wr-accent); outline-offset: 2px; }
 #wr-dock button[hidden] { display: none; }
 #wr-dock .wr-dock-items {
@@ -324,6 +369,17 @@ html.wr-panel-open #wr-panel { opacity: 1; transform: none; pointer-events: auto
 #wr-panel input[type=checkbox]:checked { background: var(--wr-accent); }
 #wr-panel input[type=checkbox]:checked::after { transform: translateX(14px); }
 #wr-panel .wr-hint { margin: 8px 0 0; font-size: 11px; color: var(--wr-sub); }
+#wr-panel .wr-typo-body { transition: opacity .2s ease; }
+#wr-panel .wr-typo.wr-off .wr-typo-body { opacity: .4; pointer-events: none; }
+#wr-panel .wr-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+#wr-panel .wr-presets button {
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--wr-chip);
+  font-size: 12px;
+}
+#wr-panel .wr-presets button:hover { background: var(--wr-chip-hover); }
 #wr-panel footer { margin-top: 20px; text-align: center; }
 
 /* 代理操作官方字体面板时把它藏起来 */

@@ -20,12 +20,15 @@
     fontTrack: '.reader_font_control_slider_track',
     fontDots: '.reader_font_control_slider_track_level_dot',
     fontItems: '.font-panel-content-fonts-item',
+    // 官方排版引擎从这个容器里的 <style> 读取段落样式，再画到 canvas 上。
+    engineStyleHost: '.renderTargetContainer',
   };
   const READER_PATH = /^\/web\/reader\//;
 
   const prefs = Object.assign(
     {
       theme: 'auto', width: 'medium', tint: 'none', immersive: true, restoreLast: true, scrollSpeed: 40,
+      typo: false, lineHeight: 1.9, paraSpacing: 0.8, letterSpacing: 0, indent: true,
       stealth: false, stealthAlpha: 70, stealthColor: 'gray',
     },
     window.__WR_PREFS__ || {},
@@ -66,6 +69,9 @@
   style.textContent = window.__WR_CSS__ || '';
   const tint = el('div', { id: 'wr-tint' });
   const progress = el('div', { id: 'wr-progress' });
+  // 上下边缘渐隐，正文滚到标题条下面不会和标题文字叠在一起。
+  const fadeTop = el('div', { id: 'wr-fade-top', 'aria-hidden': 'true' });
+  const fadeBottom = el('div', { id: 'wr-fade-bottom', 'aria-hidden': 'true' });
   const toastEl = el('div', { id: 'wr-toast', role: 'status', 'aria-live': 'polite' });
 
   // 标题条：拖动窗口、关闭、最小化。原生红绿灯已隐藏。
@@ -183,6 +189,17 @@
   panel.inert = true;
   const seg = (key, opts) =>
     `<div class="wr-seg" role="group" data-key="${key}">${opts.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join('')}</div>`;
+  // 滑杆旁显示当前值；fmt 用于格式化显示文本。
+  const FMT = {};
+  const slider = (key, label, min, max, step, fmt) => {
+    FMT[key] = fmt;
+    return `<label class="wr-row"><span>${label} <output data-val="${key}"></output></span><input type="range" min="${min}" max="${max}" step="${step}" data-key="${key}"></label>`;
+  };
+  const PRESETS = {
+    compact: { typo: true, lineHeight: 1.6, paraSpacing: 0.3, letterSpacing: 0 },
+    comfort: { typo: true, lineHeight: 1.9, paraSpacing: 0.8, letterSpacing: 0.02 },
+    airy: { typo: true, lineHeight: 2.3, paraSpacing: 1.3, letterSpacing: 0.05 },
+  };
   const toggle = (key, label, hint = '') =>
     `<label class="wr-row"><span>${label}${hint ? ` <em>${hint}</em>` : ''}</span><input type="checkbox" role="switch" data-key="${key}"></label>`;
   panel.innerHTML = `
@@ -193,6 +210,21 @@
         <button type="button" data-act="font-" aria-label="减小字号">A<sup>−</sup></button>
         <output data-out="fontSize">–</output>
         <button type="button" data-act="font+" aria-label="增大字号">A<sup>+</sup></button>
+      </div>
+    </section>
+    <section data-reader class="wr-typo">
+      <h3>排版</h3>
+      ${toggle('typo', '自定义排版')}
+      <div class="wr-typo-body">
+        ${slider('lineHeight', '行高', 1.4, 2.8, 0.1, (v) => `${v.toFixed(1)}`)}
+        ${slider('paraSpacing', '段间距', 0, 2, 0.1, (v) => `${v.toFixed(1)} 字`)}
+        ${slider('letterSpacing', '字间距', 0, 0.2, 0.01, (v) => `${Math.round(v * 100)}%`)}
+        ${toggle('indent', '首行缩进')}
+        <div class="wr-presets" role="group" aria-label="排版预设">
+          <button type="button" data-preset="compact">紧凑</button>
+          <button type="button" data-preset="comfort">舒适</button>
+          <button type="button" data-preset="airy">宽松</button>
+        </div>
       </div>
     </section>
     <section data-reader>
@@ -249,7 +281,7 @@
   const mount = () => {
     if (!document.head || !document.body) return false;
     if (!style.isConnected) document.head.appendChild(style);
-    for (const n of [tint, progress, bar, dock, panel, toastEl, help]) {
+    for (const n of [fadeTop, fadeBottom, tint, progress, bar, dock, panel, toastEl, help]) {
       if (!n.isConnected) document.body.appendChild(n);
     }
     return true;
@@ -274,9 +306,18 @@
     const [r, g, b] = m.map(Number);
     return 0.299 * r + 0.587 * g + 0.114 * b < 128;
   };
+  // 官方阅读页正文栏和两侧底色不同，看起来像一块板子。取正文栏的颜色铺满整页。
+  const syncPageColor = () => {
+    const col = isReader() && $(SEL.content);
+    const c = col && getComputedStyle(col).backgroundColor;
+    if (c && !/rgba\(0, 0, 0, 0\)/.test(c)) root.style.setProperty('--wr-page', c);
+    else root.style.removeProperty('--wr-page');
+  };
+
   let lastBg = '';
   const syncDark = () => {
     if (prefs.stealth || !document.body) return;
+    syncPageColor();
     // 反色时页面实际是浅色，浮层按浅色配，随滤镜一起变暗。
     root.classList.toggle('wr-dark', pageIsDark());
     // 把页面底色告诉 Go，拉伸窗口时新露出的区域就不会闪白。
@@ -302,6 +343,7 @@
       if (/^wr-(w|tint|fg)-/.test(c)) root.classList.remove(c);
     }
     root.classList.add(`wr-w-${prefs.width}`, `wr-tint-${prefs.tint}`, `wr-fg-${prefs.stealthColor}`);
+    if (reader) syncTypo();
     root.style.setProperty('--wr-alpha', String(Math.max(5, Math.min(100, prefs.stealthAlpha)) / 100));
     syncDock();
     updateProgress();
@@ -322,13 +364,14 @@
     t.finished.finally(() => { transitioning = false; });
   };
   let booted = false;
-  const VISUAL = ['width', 'tint', 'stealth', 'stealthColor', 'theme'];
+  const VISUAL = ['width', 'tint', 'stealth', 'stealthColor', 'theme', 'typo', 'lineHeight', 'paraSpacing', 'letterSpacing', 'indent'];
 
   let speed = prefs.scrollSpeed || 40;
   const apply = (next) => {
     const changed = Object.keys(next || {}).filter((k) => prefs[k] !== next[k]);
     if (booted && changed.some((k) => VISUAL.includes(k))) {
-      smooth(() => applyNow(next, changed), changed.includes('width') ? 250 : changed.includes('theme') ? 200 : 0);
+      const typo = changed.some((k) => ['typo', 'lineHeight', 'paraSpacing', 'letterSpacing', 'indent'].includes(k));
+      smooth(() => applyNow(next, changed), typo ? 1500 : changed.includes('width') ? 250 : changed.includes('theme') ? 200 : 0);
       return;
     }
     applyNow(next, changed);
@@ -366,6 +409,60 @@
     progress.style.width = max > 0 ? `${Math.min(100, (s.scrollTop / max) * 100)}%` : '0';
   };
 
+  // ---------- 自定义排版 ----------
+  // 正文由官方引擎画在 canvas 上，但它按 .renderTargetContainer 里 <style> 的规则计算行高、段距。
+  // 往这个 <style> 末尾追加规则，再让引擎重新排一次，canvas 上的排版就会跟着变。
+  const TYPO_MARK = '/*wr-typo*/';
+  const typoCSS = () => {
+    if (!prefs.typo) return '';
+    // 引擎自己解析这段 CSS，不认 :is() 之类的新语法，只用最基础的选择器列表。
+    const p = ['.content', 'p', '.bodyContent', '.text'].map((c) => `.readerChapterContent ${c}`).join(',');
+    return `${TYPO_MARK}${p}{line-height:${prefs.lineHeight}em !important;margin-top:0 !important;margin-bottom:${prefs.paraSpacing}em !important;`
+      + `letter-spacing:${prefs.letterSpacing}em !important;text-indent:${prefs.indent ? '2em' : '0'} !important;text-align:justify !important}`;
+  };
+  // 官方没有对外的重排接口；容器宽度变化会触发重排，所以临时把宽度改 1px 再改回来。
+  // 首次触发偶尔不生效，排版改了总高度必然变化，高度没变就再触发一次。
+  let relayoutTimer;
+  const forceRelayout = (retry = 1) => {
+    clearTimeout(relayoutTimer);
+    relayoutTimer = setTimeout(() => {
+      const col = $(SEL.content);
+      if (!col) return;
+      const s = scroller();
+      const h0 = s.scrollHeight;
+      const y = s.scrollTop / Math.max(1, h0);
+      const w = col.getBoundingClientRect().width;
+      col.style.setProperty('width', `${w - 1}px`, 'important');
+      window.dispatchEvent(new Event('resize'));
+      // 引擎对 resize 做了防抖，两次间隔太短会被合并成“宽度没变”。
+      setTimeout(() => {
+        col.style.removeProperty('width');
+        window.dispatchEvent(new Event('resize'));
+        setTimeout(() => {
+          if (s.scrollHeight === h0 && retry > 0) { forceRelayout(retry - 1); return; }
+          // 行高变了总高度也变，按比例回到原来读到的位置。
+          s.scrollTop = y * s.scrollHeight;
+        }, 700);
+      }, 600);
+    }, 150);
+  };
+  let appliedTypo = null;
+  const syncTypo = () => {
+    const host = $(SEL.engineStyleHost);
+    const st = host && host.querySelector(':scope > style');
+    if (!st) return;
+    const want = typoCSS();
+    const text = st.textContent;
+    const i = text.indexOf(TYPO_MARK);
+    const base = i < 0 ? text : text.slice(0, i);
+    if (text === base + want) return;
+    st.textContent = base + want;
+    // 官方换章时会重写这个 <style>，这时它自己会排版，不用再触发一次。
+    if (appliedTypo !== null && appliedTypo !== want) forceRelayout();
+    else if (appliedTypo === null && want) forceRelayout();
+    appliedTypo = want;
+  };
+
   // ---------- 设置浮窗逻辑 ----------
   const fontDots = () => document.querySelectorAll(SEL.fontDots);
   const currentFontLevel = () => {
@@ -382,6 +479,8 @@
       else if (n.type === 'range') n.value = v;
     });
     panel.querySelector('[data-out=alpha]').textContent = `${prefs.stealthAlpha}%`;
+    panel.querySelectorAll('[data-val]').forEach((o) => { o.textContent = FMT[o.dataset.val](Number(prefs[o.dataset.val])); });
+    panel.querySelector('.wr-typo').classList.toggle('wr-off', !prefs.typo);
     panel.querySelectorAll('[data-reader]').forEach((n) => { n.hidden = !isReader(); });
     const level = currentFontLevel();
     panel.querySelector('[data-out=fontSize]').textContent = level < 1 ? '–' : `${level} / ${fontDots().length || 7}`;
@@ -405,6 +504,7 @@
     if (t.classList.contains('wr-x')) { togglePanel(false); return; }
     const group = t.closest('[data-key]');
     if (group && t.dataset.v) { setPref({ [group.dataset.key]: t.dataset.v }); return; }
+    if (t.dataset.preset) { setPref(PRESETS[t.dataset.preset]); return; }
     if (t.dataset.font) { const k = Number(t.dataset.font); smooth(() => pickFont(k), 300); return; }
     if (t.dataset.act === 'font-') smooth(() => stepFont(-1), 300);
     if (t.dataset.act === 'font+') smooth(() => stepFont(1), 300);
@@ -412,12 +512,16 @@
   panel.addEventListener('change', (e) => {
     const n = e.target;
     if (!(n instanceof HTMLInputElement) || !n.dataset.key) return;
-    setPref({ [n.dataset.key]: n.type === 'checkbox' ? n.checked : Number(n.value) });
+    setPref({ [n.dataset.key]: n.type === 'checkbox' ? n.checked : parseFloat(n.value) });
   });
   panel.addEventListener('input', (e) => {
     const n = e.target;
+    if (!(n instanceof HTMLInputElement)) return;
     // 拖动时实时预览，松手再落盘。
-    if (n instanceof HTMLInputElement && n.dataset.key === 'stealthAlpha') apply({ stealthAlpha: Number(n.value) });
+    if (n.dataset.key === 'stealthAlpha') apply({ stealthAlpha: Number(n.value) });
+    // 排版拖动时只更新数值，松手再重排，避免连续重排卡顿。
+    const out = panel.querySelector(`[data-val="${n.dataset.key}"]`);
+    if (out) out.textContent = FMT[n.dataset.key](parseFloat(n.value));
   });
   document.addEventListener('mousedown', (e) => {
     if (panelOpen && !panel.contains(e.target) && !dock.contains(e.target)) togglePanel(false);
@@ -507,9 +611,10 @@
   // ---------- 翻页 ----------
   const findNextChapter = () => {
     const btn = $(SEL.nextChapter);
-    if (btn && /下一章/.test(btn.textContent || '')) return btn;
+    // 长章节会分段加载，末尾是“下一页”，读完整章才是“下一章”。
+    if (btn && /下一[章页]/.test(btn.textContent || '')) return btn;
     return [...document.querySelectorAll('button, a, [role=button]')]
-      .find((n) => (n.textContent || '').trim() === '下一章') || null;
+      .find((n) => /^下一[章页]$/.test((n.textContent || '').trim())) || null;
   };
   const pressArrow = (key) => {
     const code = key === 'ArrowRight' ? 39 : 37;
@@ -526,7 +631,7 @@
     if (isHorizontal()) { pressArrow(dir > 0 ? 'ArrowRight' : 'ArrowLeft'); return; }
     if (dir > 0 && atBottom()) {
       const next = findNextChapter();
-      if (next) { next.click(); toast('下一章'); } else toast('已到末尾');
+      if (next) { const t = next.textContent.trim(); next.click(); toast(t); } else toast('已到末尾');
       return;
     }
     // 保留一点重叠，翻屏后不丢位置。
@@ -653,6 +758,7 @@
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       fonts = [];
+      appliedTypo = null;
       if (autoRAF && !isReader()) autoScroll(false);
       // 记下当前书，Go 侧下次启动直接打开。
       if (isReader()) post('last', location.href);
@@ -688,6 +794,7 @@
       ensureLogin();
       root.classList.toggle('wr-horizontal', isReader() && isHorizontal());
       syncDark();
+      if (isReader()) syncTypo();
     });
   }).observe(root, { childList: true, subtree: true });
 

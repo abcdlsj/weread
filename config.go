@@ -15,6 +15,13 @@ type Prefs struct {
 	RestoreLast bool   `json:"restoreLast"` // 启动时回到上次阅读的书
 	ScrollSpeed int    `json:"scrollSpeed"` // 自动滚动速度，像素/秒
 
+	// 自定义排版：写进官方排版引擎读取的 CSS，关闭时完全使用官方排版。
+	Typo          bool    `json:"typo"`
+	LineHeight    float64 `json:"lineHeight"`    // 行高，倍数
+	ParaSpacing   float64 `json:"paraSpacing"`   // 段间距，em
+	LetterSpacing float64 `json:"letterSpacing"` // 字间距，em
+	Indent        bool    `json:"indent"`        // 首行缩进两字
+
 	// 伪装模式：窗口半透明、深色背景、终端配色，可贴在终端旁边。
 	Stealth      bool   `json:"stealth"`
 	StealthAlpha int    `json:"stealthAlpha"` // 背景不透明度，百分比
@@ -40,6 +47,9 @@ func defaultConfig() Config {
 		Immersive:    true,
 		RestoreLast:  true,
 		ScrollSpeed:  40,
+		LineHeight:   1.9,
+		ParaSpacing:  0.8,
+		Indent:       true,
 		StealthAlpha: 70,
 		StealthColor: "gray",
 	}}
@@ -62,6 +72,9 @@ func (p *Prefs) sanitize() {
 	}
 	p.StealthAlpha = clamp(p.StealthAlpha, 0, 100)
 	p.ScrollSpeed = clamp(p.ScrollSpeed, 10, 400)
+	p.LineHeight = clampF(p.LineHeight, 1.2, 3, d.LineHeight)
+	p.ParaSpacing = clampF(p.ParaSpacing, 0, 3, d.ParaSpacing)
+	p.LetterSpacing = clampF(p.LetterSpacing, 0, 0.3, 0)
 }
 
 func oneOf(v string, opts ...string) bool {
@@ -74,6 +87,14 @@ func oneOf(v string, opts ...string) bool {
 }
 
 func clamp(v, lo, hi int) int {
+	return max(lo, min(hi, v))
+}
+
+// clampF 限制浮点取值；旧配置里没有该字段（值为 0 且 0 不合法）时用默认值。
+func clampF(v, lo, hi, def float64) float64 {
+	if v == 0 && lo > 0 {
+		return def
+	}
 	return max(lo, min(hi, v))
 }
 
