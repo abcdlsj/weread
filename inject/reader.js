@@ -92,7 +92,7 @@
     { id: 'note', label: '笔记', icon: ICON.note, reader: true },
     { id: 'ai', label: 'AI 问书', icon: ICON.ai, reader: true },
     { id: 'column', label: '单栏 / 双栏', icon: ICON.column, reader: true },
-    { id: 'theme', label: '深色 / 浅色', icon: ICON.theme, reader: true },
+    { id: 'theme', label: '日间 / 夜间', icon: ICON.theme },
     { id: 'settings', label: '阅读设置 ⌘,', icon: ICON.type },
     { id: 'stealth', label: '伪装模式 ⌘⇧M', icon: ICON.stealth },
     { id: 'shelf', label: '书架 ⌘L', icon: ICON.shelf },
@@ -109,7 +109,8 @@
     note: () => $(SEL.note) || officialButton(/笔记/),
     ai: () => officialButton(/问书/),
     column: () => officialButton(/栏/),
-    theme: () => $(SEL.theme),
+    // 阅读页用官方主题按钮；其他页面切换窗口外观，不需要官方按钮。
+    theme: () => (isReader() ? $(SEL.theme) : document.body),
   };
   const syncDock = () => {
     dock.querySelectorAll('[data-dock]').forEach((b) => {
@@ -164,9 +165,12 @@
       case 'note': tapOfficial($(SEL.note) || officialButton(/笔记/), '笔记'); break;
       case 'ai': tapOfficial(officialButton(/问书/), 'AI 问书'); break;
       case 'column':
-        if (tapOfficial(officialButton(/栏/), '双栏切换')) setTimeout(relayout, 500);
+        smooth(() => { if (tapOfficial(officialButton(/栏/), '双栏切换')) setTimeout(relayout, 450); }, 600);
         break;
-      case 'theme': tapOfficial($(SEL.theme), '主题切换'); setTimeout(render, 500); break;
+      case 'theme':
+        if (isReader()) smooth(() => { tapOfficial($(SEL.theme), '主题切换'); setTimeout(render, 450); }, 500);
+        else toggleAppearance();
+        break;
       case 'settings': togglePanel(); break;
       case 'stealth': setPref({ stealth: !prefs.stealth }); break;
       case 'shelf': post('shelf'); break;
@@ -194,6 +198,10 @@
     <section data-reader>
       <h3>字体</h3>
       <div class="wr-fonts" data-out="fonts"><p class="wr-hint">读取中…</p></div>
+    </section>
+    <section>
+      <h3>书架等页面 <em>阅读页用官方主题</em></h3>
+      ${seg('theme', [['auto', '跟随系统'], ['light', '日间'], ['dark', '夜间']])}
     </section>
     <section>
       <h3>版心宽度 <em>⌘1–4</em></h3>
@@ -266,8 +274,20 @@
     const [r, g, b] = m.map(Number);
     return 0.299 * r + 0.587 * g + 0.114 * b < 128;
   };
+  let lastBg = '';
   const syncDark = () => {
-    if (!prefs.stealth && document.body) root.classList.toggle('wr-dark', pageIsDark());
+    if (prefs.stealth || !document.body) return;
+    // 反色时页面实际是浅色，浮层按浅色配，随滤镜一起变暗。
+    root.classList.toggle('wr-dark', pageIsDark());
+    // 把页面底色告诉 Go，拉伸窗口时新露出的区域就不会闪白。
+    const m = getComputedStyle(document.body).backgroundColor.match(/\d+(\.\d+)?/g);
+    if (!m || (m.length === 4 && Number(m[3]) < 0.5)) return;
+    let [R, G, B] = m.map(Number);
+    if (root.classList.contains('wr-night')) [R, G, B] = [R, G, B].map((v) => Math.round(255 - v * 0.9));
+    const bg = `${R},${G},${B}`;
+    if (bg === lastBg) return;
+    lastBg = bg;
+    post('bg', JSON.stringify({ R, G, B }));
   };
 
   const render = () => {
@@ -276,6 +296,7 @@
     root.classList.toggle('wr-horizontal', reader && isHorizontal());
     root.classList.toggle('wr-immersive', !!prefs.immersive);
     root.classList.toggle('wr-stealth', !!prefs.stealth);
+    root.classList.toggle('wr-night', isNight());
     syncDark();
     for (const c of [...root.classList]) {
       if (/^wr-(w|tint|fg)-/.test(c)) root.classList.remove(c);
@@ -289,9 +310,30 @@
   // 正文 canvas 按容器宽度排版，改宽度后让官方脚本重排。
   const relayout = () => requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
 
+  // 外观类切换用 View Transition 做淡入淡出：先拍旧画面，等 wait 毫秒让官方重排完，再过渡到新画面。
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  let transitioning = false;
+  const smooth = (fn, wait = 0) => {
+    if (!document.startViewTransition || reduced.matches || transitioning || document.hidden) { fn(); return; }
+    transitioning = true;
+    const t = document.startViewTransition(() => new Promise((resolve) => {
+      Promise.resolve(fn()).finally(() => setTimeout(resolve, wait));
+    }));
+    t.finished.finally(() => { transitioning = false; });
+  };
+  let booted = false;
+  const VISUAL = ['width', 'tint', 'stealth', 'stealthColor', 'theme'];
+
   let speed = prefs.scrollSpeed || 40;
   const apply = (next) => {
     const changed = Object.keys(next || {}).filter((k) => prefs[k] !== next[k]);
+    if (booted && changed.some((k) => VISUAL.includes(k))) {
+      smooth(() => applyNow(next, changed), changed.includes('width') ? 250 : changed.includes('theme') ? 200 : 0);
+      return;
+    }
+    applyNow(next, changed);
+  };
+  const applyNow = (next, changed) => {
     Object.assign(prefs, next);
     speed = prefs.scrollSpeed || speed;
     render();
@@ -300,12 +342,22 @@
     if (changed.includes('tint')) toast(`底色：${TINT_LABEL[prefs.tint] || prefs.tint}`);
     if (changed.includes('immersive')) toast(prefs.immersive ? '沉浸模式：开' : '沉浸模式：关');
     if (changed.includes('stealth')) toast(prefs.stealth ? '伪装模式：开' : '伪装模式：关');
+    if (changed.includes('theme')) toast(`外观：${THEME_LABEL[prefs.theme] || prefs.theme}`);
   };
 
+  // 非阅读页的深浅色由窗口外观驱动（官方 CSS 用 prefers-color-scheme）。
+  // 官方非阅读页没有像样的深色版，夜间模式用反色滤镜实现，图片再反回来。
+  const THEME_LABEL = { auto: '跟随系统', light: '日间', dark: '夜间' };
+  let sysDark = false;
+  const isNight = () => !isReader() && !prefs.stealth && (prefs.theme === 'dark' || (prefs.theme === 'auto' && sysDark));
+  const toggleAppearance = () => setPref({ theme: isNight() ? 'light' : 'dark' });
+  const setSystemDark = (v) => { sysDark = !!v; render(); };
+
   // 偏好改动：本地生效 + 回传 Go 落盘。
+  // apply 可能在过渡回调里延后执行，所以先合并再回传。
   const setPref = (patch) => {
+    post('prefs', JSON.stringify({ ...prefs, ...patch }));
     apply(patch);
-    post('prefs', JSON.stringify(prefs));
   };
 
   const updateProgress = () => {
@@ -353,9 +405,9 @@
     if (t.classList.contains('wr-x')) { togglePanel(false); return; }
     const group = t.closest('[data-key]');
     if (group && t.dataset.v) { setPref({ [group.dataset.key]: t.dataset.v }); return; }
-    if (t.dataset.font) { pickFont(Number(t.dataset.font)); return; }
-    if (t.dataset.act === 'font-') stepFont(-1);
-    if (t.dataset.act === 'font+') stepFont(1);
+    if (t.dataset.font) { const k = Number(t.dataset.font); smooth(() => pickFont(k), 300); return; }
+    if (t.dataset.act === 'font-') smooth(() => stepFont(-1), 300);
+    if (t.dataset.act === 'font+') smooth(() => stepFont(1), 300);
   });
   panel.addEventListener('change', (e) => {
     const n = e.target;
@@ -639,10 +691,12 @@
     });
   }).observe(root, { childList: true, subtree: true });
 
-  window.__wr = { apply, autoScroll, toast, page, panel: () => togglePanel() };
+  window.__wr = { apply, autoScroll, toast, page, setSystemDark, panel: () => togglePanel() };
   mount();
   onRoute();
   render();
+  // 首次套用偏好不做过渡，之后的切换才淡入淡出。
+  setTimeout(() => { booted = true; }, 1500);
   // 让 Go 侧的 ExecJS 开始投递；随后请求最新偏好。
   bridge('wails:runtime:ready');
   post('ready');

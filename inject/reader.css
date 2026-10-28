@@ -46,8 +46,8 @@ html.wr-reader .readerControls .wr_tooltip_item { display: none !important; }
 .navBar_separator {
   display: none !important;
 }
-/* 内容让出标题条高度 */
-html:not(.wr-reader) .navBar { top: var(--wr-bar-h) !important; }
+/* 内容让出标题条高度：导航栏贴顶并向下撑高，避免标题条后面透出滚动内容 */
+html:not(.wr-reader) .navBar { top: 0 !important; padding-top: var(--wr-bar-h) !important; box-sizing: content-box; }
 html:not(.wr-reader) .app { padding-top: var(--wr-bar-h); }
 html.wr-reader .readerContent .app_content { padding-top: calc(var(--wr-bar-h) + 12px) !important; }
 
@@ -389,13 +389,18 @@ html.wr-reader:not(.wr-horizontal) #wr-progress { opacity: .6; }
   position: fixed;
   inset: 0;
   z-index: 2147483009;
-  display: none;
+  display: flex;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .2s ease, visibility 0s linear .2s;
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, .3);
   font: 13px/1.6 var(--wr-ui-font);
 }
-#wr-help.wr-show { display: flex; }
+#wr-help.wr-show { opacity: 1; visibility: visible; transition: opacity .2s ease; }
+#wr-help > div { transform: scale(.97); transition: transform .2s ease; }
+#wr-help.wr-show > div { transform: none; }
 #wr-help > div {
   min-width: 340px;
   padding: 20px 24px;
@@ -488,7 +493,25 @@ html.wr-stealth .wr_readerImage_opacity { display: none !important; }
 /* 伪装时 Dock 平时完全隐身，鼠标一动才出现 */
 html.wr-stealth:not(.wr-ui):not(.wr-dock-open) #wr-dock { opacity: 0; pointer-events: none; }
 
+/* ---------- 夜间模式（非阅读页）：反色，图片反回来 ----------
+   滤镜挂在 html 上：根元素的滤镜不会改变 fixed 元素的定位基准，挂在 body 上会。 */
+html.wr-night { background: #fff !important; filter: invert(.9) hue-rotate(180deg); }
+html.wr-night :is(img, video, canvas, [style*="background-image"]) { filter: invert(1) hue-rotate(180deg); }
+/* 已经反回来的元素里面再嵌图片，不能再反一次 */
+html.wr-night :is(img, video, canvas, [style*="background-image"]) :is(img, video, canvas, [style*="background-image"]) { filter: none; }
+
+/* ---------- 切换过渡 ---------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: .28s;
+  animation-timing-function: ease;
+}
+/* 伪装切换时 html 背景也跟着淡入淡出 */
+html { transition: background-color .28s ease; }
+
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  #wr-help, #wr-help > div, html { transition: none !important; }
   #wr-tint, #wr-progress, #wr-toast, #wr-dock, #wr-dock button, #wr-panel,
   #wr-bar .wr-title, #wr-bar .wr-lights { transition: none !important; }
 }

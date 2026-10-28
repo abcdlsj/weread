@@ -38,8 +38,8 @@ static void setWindowStealth(void *ptr, bool on) {
 	[w invalidateShadow];
 }
 
-// 微信读书按 prefers-color-scheme 切换深浅色，改窗口外观即可驱动官方主题。
-// mode: 0 跟随系统，1 浅色，2 深色。
+// 官方网页在系统深色下只改了文字颜色、背景仍是白色，所以窗口外观固定为浅色，
+// 夜间模式由注入的 CSS 实现。mode: 0 跟随系统，1 浅色，2 深色。
 static void setWindowAppearance(void *ptr, int mode) {
 	NSWindow *w = (__bridge NSWindow *)ptr;
 	if (mode == 1) {
@@ -69,6 +69,22 @@ static void windowTap(void *ptr, double x, double y) {
 		[w sendEvent:e];
 	}
 }
+// 窗口拉伸时，新露出的区域先画窗口和 WebView 的底色，再等页面重绘。
+// 底色与页面不一致就会闪一下，所以跟页面底色保持同步。
+static void setWindowBase(void *ptr, int r, int g, int b) {
+	NSWindow *w = (__bridge NSWindow *)ptr;
+	if (!w.opaque) return; // 伪装模式保持透明
+	NSColor *c = [NSColor colorWithSRGBRed:r / 255.0 green:g / 255.0 blue:b / 255.0 alpha:1];
+	[w setBackgroundColor:c];
+	WKWebView *web = findWebView(w.contentView);
+	if (web) {
+		if (@available(macOS 12.0, *)) web.underPageBackgroundColor = c;
+	}
+}
+static bool systemIsDark(void) {
+	NSAppearanceName n = [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+	return [n isEqualToString:NSAppearanceNameDarkAqua];
+}
 */
 import "C"
 
@@ -76,9 +92,9 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// applyWindowLook 同步原生窗口的透明度与外观；伪装模式强制深色。
+// applyWindowLook 同步原生窗口的透明度与外观；伪装模式用深色，其余固定浅色。
 func applyWindowLook(w *application.WebviewWindow, p Prefs) {
-	mode := map[string]int{"auto": 0, "light": 1, "dark": 2}[p.Theme]
+	mode := 1
 	if p.Stealth {
 		mode = 2
 	}
@@ -96,4 +112,19 @@ func windowTap(w *application.WebviewWindow, x, y float64) {
 			C.windowTap(ptr, C.double(x), C.double(y))
 		}
 	})
+}
+
+func setWindowBase(w *application.WebviewWindow, r, g, b uint8) {
+	application.InvokeAsync(func() {
+		if ptr := w.NativeWindow(); ptr != nil {
+			C.setWindowBase(ptr, C.int(r), C.int(g), C.int(b))
+		}
+	})
+}
+
+// systemDark 返回系统是否处于深色外观，供“跟随系统”的夜间模式使用。
+func systemDark() bool {
+	var dark bool
+	application.InvokeSync(func() { dark = bool(C.systemIsDark()) })
+	return dark
 }

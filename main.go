@@ -278,6 +278,7 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 		s.mu.Lock()
 		prefs := s.cfg.Prefs
 		s.mu.Unlock()
+		s.callJS("setSystemDark", systemDark())
 		s.callJS("apply", prefs)
 	case "last":
 		if !isReaderURL(msg.Value) {
@@ -314,7 +315,7 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 		cfg := s.cfg
 		s.mu.Unlock()
 		_ = saveConfig(cfg)
-		if old.Stealth != p.Stealth || old.Theme != p.Theme {
+		if old.Stealth != p.Stealth {
 			applyWindowLook(s.win, p)
 		}
 		s.immersiveItem.SetChecked(p.Immersive)
@@ -330,6 +331,11 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 			return
 		}
 		windowTap(s.win, pt.X, pt.Y)
+	case "bg":
+		var c struct{ R, G, B uint8 }
+		if err := json.Unmarshal([]byte(msg.Value), &c); err == nil {
+			setWindowBase(s.win, c.R, c.G, c.B)
+		}
 	case "close":
 		s.win.Close()
 	case "minimise":
