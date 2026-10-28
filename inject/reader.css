@@ -343,6 +343,7 @@ html.wr-panel-open #wr-panel { opacity: 1; transform: none; pointer-events: auto
 
 #wr-panel .wr-row { display: flex; align-items: center; justify-content: space-between; min-height: 34px; gap: 12px; }
 #wr-panel .wr-row + .wr-seg { margin-top: 6px; }
+#wr-panel .wr-seg + .wr-row { margin-top: 6px; }
 #wr-panel .wr-row output { color: var(--wr-sub); font-variant-numeric: tabular-nums; }
 #wr-panel input[type=range] { width: 120px; accent-color: var(--wr-accent); }
 /* 开关 */
@@ -374,17 +375,7 @@ html.wr-panel-open #wr-panel { opacity: 1; transform: none; pointer-events: auto
 #wr-panel input[type=checkbox]:checked { background: var(--wr-accent); }
 #wr-panel input[type=checkbox]:checked::after { transform: translateX(14px); }
 #wr-panel .wr-hint { margin: 8px 0 0; font-size: 11px; color: var(--wr-sub); }
-#wr-panel .wr-typo-body { transition: opacity .2s ease; }
-#wr-panel .wr-typo.wr-off .wr-typo-body { opacity: .4; pointer-events: none; }
-#wr-panel .wr-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
-#wr-panel .wr-presets button {
-  height: 28px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--wr-chip);
-  font-size: 12px;
-}
-#wr-panel .wr-presets button:hover { background: var(--wr-chip-hover); }
+
 #wr-panel footer { margin-top: 20px; text-align: center; }
 
 /* 代理操作官方字体面板时把它藏起来 */

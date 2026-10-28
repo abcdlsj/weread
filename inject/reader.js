@@ -28,7 +28,7 @@
   const prefs = Object.assign(
     {
       theme: 'auto', width: 'medium', tint: 'none', immersive: true, restoreLast: true, scrollSpeed: 40,
-      typo: false, lineHeight: 1.9, paraSpacing: 0.8, letterSpacing: 0, indent: true, trimTop: true,
+      spacing: 'standard', trimTop: true,
       stealth: false, stealthAlpha: 70, stealthColor: 'gray',
     },
     window.__WR_PREFS__ || {},
@@ -189,17 +189,6 @@
   panel.inert = true;
   const seg = (key, opts) =>
     `<div class="wr-seg" role="group" data-key="${key}">${opts.map(([v, l]) => `<button type="button" data-v="${v}">${l}</button>`).join('')}</div>`;
-  // 滑杆旁显示当前值；fmt 用于格式化显示文本。
-  const FMT = {};
-  const slider = (key, label, min, max, step, fmt) => {
-    FMT[key] = fmt;
-    return `<label class="wr-row"><span>${label} <output data-val="${key}"></output></span><input type="range" min="${min}" max="${max}" step="${step}" data-key="${key}"></label>`;
-  };
-  const PRESETS = {
-    compact: { typo: true, lineHeight: 1.6, paraSpacing: 0.3, letterSpacing: 0 },
-    comfort: { typo: true, lineHeight: 1.9, paraSpacing: 0.8, letterSpacing: 0.02 },
-    airy: { typo: true, lineHeight: 2.3, paraSpacing: 1.3, letterSpacing: 0.05 },
-  };
   const toggle = (key, label, hint = '') =>
     `<label class="wr-row"><span>${label}${hint ? ` <em>${hint}</em>` : ''}</span><input type="checkbox" role="switch" data-key="${key}"></label>`;
   panel.innerHTML = `
@@ -212,21 +201,10 @@
         <button type="button" data-act="font+" aria-label="增大字号">A<sup>+</sup></button>
       </div>
     </section>
-    <section data-reader class="wr-typo">
-      <h3>排版</h3>
+    <section data-reader>
+      <h3>间距</h3>
+      ${seg('spacing', [['compact', '紧凑'], ['standard', '标准'], ['loose', '宽松']])}
       ${toggle('trimTop', '收紧章首空白')}
-      ${toggle('typo', '自定义排版')}
-      <div class="wr-typo-body">
-        ${slider('lineHeight', '行高', 1.4, 2.8, 0.1, (v) => `${v.toFixed(1)}`)}
-        ${slider('paraSpacing', '段间距', 0, 2, 0.1, (v) => `${v.toFixed(1)} 字`)}
-        ${slider('letterSpacing', '字间距', 0, 0.2, 0.01, (v) => `${Math.round(v * 100)}%`)}
-        ${toggle('indent', '首行缩进')}
-        <div class="wr-presets" role="group" aria-label="排版预设">
-          <button type="button" data-preset="compact">紧凑</button>
-          <button type="button" data-preset="comfort">舒适</button>
-          <button type="button" data-preset="airy">宽松</button>
-        </div>
-      </div>
     </section>
     <section data-reader>
       <h3>字体</h3>
@@ -366,7 +344,7 @@
     t.finished.finally(() => { transitioning = false; });
   };
   let booted = false;
-  const TYPO_KEYS = ['typo', 'lineHeight', 'paraSpacing', 'letterSpacing', 'indent', 'trimTop'];
+  const TYPO_KEYS = ['spacing', 'trimTop'];
   const VISUAL = ['width', 'tint', 'stealth', 'stealthColor', 'theme', ...TYPO_KEYS];
 
   let speed = prefs.scrollSpeed || 40;
@@ -416,12 +394,20 @@
   // 正文由官方引擎画在 canvas 上，但它按 .renderTargetContainer 里 <style> 的规则计算行高、段距。
   // 往这个 <style> 末尾追加规则，再让引擎重新排一次，canvas 上的排版就会跟着变。
   const TYPO_MARK = '/*wr-typo*/';
+  // 三档间距，单位 em（相对正文字号）。缩进、对齐保留书本身的设定。
+  // 行高：中文正文常见 1.5–2 倍；官方网页版约 2.0，偏松。
+  // 段距：中文书多靠首行缩进分段，段距只作辅助，取半行到一行。
+  const SPACING = {
+    compact: { lh: 1.6, para: 0.3, ls: 0 },
+    standard: { lh: 1.8, para: 0.6, ls: 0.02 },
+    loose: { lh: 2.1, para: 1, ls: 0.04 },
+  };
   const typoCSS = () => {
-    if (!prefs.typo) return '';
+    const v = SPACING[prefs.spacing];
+    if (!v) return '';
     // 引擎自己解析这段 CSS，不认 :is() 之类的新语法，只用最基础的选择器列表。
     const p = ['.content', 'p', '.bodyContent', '.text'].map((c) => `.readerChapterContent ${c}`).join(',');
-    return `${p}{line-height:${prefs.lineHeight}em !important;margin-top:0 !important;margin-bottom:${prefs.paraSpacing}em !important;`
-      + `letter-spacing:${prefs.letterSpacing}em !important;text-indent:${prefs.indent ? '2em' : '0'} !important;text-align:justify !important}`;
+    return `${p}{line-height:${v.lh}em !important;margin-top:0 !important;margin-bottom:${v.para}em !important;letter-spacing:${v.ls}em !important}`;
   };
   // 官方没有对外的重排接口；容器宽度变化会触发重排，所以临时把宽度改 1px 再改回来。
   // 首次触发偶尔不生效，排版改了总高度必然变化，高度没变就再触发一次。
@@ -516,8 +502,6 @@
       else if (n.type === 'range') n.value = v;
     });
     panel.querySelector('[data-out=alpha]').textContent = `${prefs.stealthAlpha}%`;
-    panel.querySelectorAll('[data-val]').forEach((o) => { o.textContent = FMT[o.dataset.val](Number(prefs[o.dataset.val])); });
-    panel.querySelector('.wr-typo').classList.toggle('wr-off', !prefs.typo);
     panel.querySelectorAll('[data-reader]').forEach((n) => { n.hidden = !isReader(); });
     const level = currentFontLevel();
     panel.querySelector('[data-out=fontSize]').textContent = level < 1 ? '–' : `${level} / ${fontDots().length || 7}`;
@@ -541,7 +525,6 @@
     if (t.classList.contains('wr-x')) { togglePanel(false); return; }
     const group = t.closest('[data-key]');
     if (group && t.dataset.v) { setPref({ [group.dataset.key]: t.dataset.v }); return; }
-    if (t.dataset.preset) { setPref(PRESETS[t.dataset.preset]); return; }
     if (t.dataset.font) { const k = Number(t.dataset.font); smooth(() => pickFont(k), 300); return; }
     if (t.dataset.act === 'font-') smooth(() => stepFont(-1), 300);
     if (t.dataset.act === 'font+') smooth(() => stepFont(1), 300);
@@ -556,9 +539,6 @@
     if (!(n instanceof HTMLInputElement)) return;
     // 拖动时实时预览，松手再落盘。
     if (n.dataset.key === 'stealthAlpha') apply({ stealthAlpha: Number(n.value) });
-    // 排版拖动时只更新数值，松手再重排，避免连续重排卡顿。
-    const out = panel.querySelector(`[data-val="${n.dataset.key}"]`);
-    if (out) out.textContent = FMT[n.dataset.key](parseFloat(n.value));
   });
   document.addEventListener('mousedown', (e) => {
     if (panelOpen && !panel.contains(e.target) && !dock.contains(e.target)) togglePanel(false);
