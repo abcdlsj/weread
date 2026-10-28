@@ -39,6 +39,14 @@ html.wr-reader .readerControls .wr_tooltip_container {
 }
 html.wr-reader.wr-tapping .readerControls .wr_tooltip_container { pointer-events: auto !important; }
 html.wr-tapping #wr-panel, html.wr-tapping #wr-dock, html.wr-tapping #wr-dock * { pointer-events: none !important; }
+html.wr-reader.wr-pull .readerControls {
+  position: fixed !important;
+  top: 50% !important;
+  right: 12px !important;
+  left: auto !important;
+  margin: 0 !important;
+  transform: translateY(-50%) !important;
+}
 html.wr-reader .readerControls .wr_tooltip_item { display: none !important; }
 /* 书架页：去掉推广入口 */
 .navBar_link_Upload,

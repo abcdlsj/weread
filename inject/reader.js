@@ -177,7 +177,7 @@
     if (y < 30 || x < 0 || x > window.innerWidth || y > window.innerHeight) return;
     root.classList.add('wr-tapping');
     clearTimeout(tapTimer);
-    tapTimer = setTimeout(() => root.classList.remove('wr-tapping'), 400);
+    tapTimer = setTimeout(() => root.classList.remove('wr-tapping', 'wr-pull'), 400);
     const scale = window.outerWidth / window.innerWidth || 1;
     post('tap', JSON.stringify({ X: x * scale, Y: y * scale }));
   };
@@ -187,6 +187,9 @@
   };
   const tapOfficial = (btn, name) => {
     if (!btn) { toast(`当前页面没有${name}`); return false; }
+    // 窗口较窄时官方把侧栏按钮排在窗口外面，原生点击点不到，临时把侧栏挪进窗口。
+    const r = btn.getBoundingClientRect();
+    if (r.left < 0 || r.right > window.innerWidth || r.top < 0 || r.bottom > window.innerHeight) root.classList.add('wr-pull');
     tapCenter(btn);
     return true;
   };
@@ -676,8 +679,15 @@
       const mask = $(SEL.fontPanelMask);
       if (mask) mask.click();
       if (!(await waitFor(() => !fontPanelShown(), 150))) {
-        // 合成点击关不掉时，在字号按钮的位置点一次真的：那里此刻盖着官方遮罩，点中即关闭。
-        tapCenter(btn);
+        // 合成点击关不掉时，在面板外的遮罩上点一次真的。窄窗口里面板会盖住字号按钮，不能点按钮的位置。
+        root.classList.add('wr-tapping'); // 先让我们的浮层让开，再找落点
+        const W = window.innerWidth;
+        const H = window.innerHeight;
+        const spot = [[16, H / 2], [W - 16, H / 2], [W / 2, H - 16], [16, H - 16]].find(([x, y]) => {
+          const n = document.elementFromPoint(x, y);
+          return n && !n.closest('.font-panel-content') && !bar.contains(n);
+        });
+        if (spot) tapAt(...spot);
         await waitFor(() => !fontPanelShown(), 400);
       }
       return true;
