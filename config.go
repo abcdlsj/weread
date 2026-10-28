@@ -29,6 +29,7 @@ type Config struct {
 	Prefs       Prefs   `json:"prefs"`
 	AlwaysOnTop bool    `json:"alwaysOnTop"`
 	Window      *Bounds `json:"window,omitempty"`
+	LastURL     string  `json:"lastURL,omitempty"` // 上次阅读的书，启动时直接打开
 }
 
 func defaultConfig() Config {

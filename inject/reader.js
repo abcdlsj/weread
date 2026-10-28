@@ -22,7 +22,6 @@
     fontItems: '.font-panel-content-fonts-item',
   };
   const READER_PATH = /^\/web\/reader\//;
-  const SHELF_PATH = /^\/web\/shelf/;
 
   const prefs = Object.assign(
     {
@@ -37,17 +36,6 @@
     try { window.webkit.messageHandlers.external.postMessage(m); } catch (_) { /* 非 wails 环境 */ }
   };
   const post = (type, value = '') => bridge(JSON.stringify({ type, value: String(value) }));
-
-  // ---------- 启动时回到上次阅读 ----------
-  const LAST_KEY = 'wr:last';
-  if (!sessionStorage.getItem('wr:booted')) {
-    sessionStorage.setItem('wr:booted', '1');
-    const last = localStorage.getItem(LAST_KEY);
-    if (prefs.restoreLast && last && SHELF_PATH.test(location.pathname)) {
-      location.replace(last);
-      return;
-    }
-  }
 
   const el = (tag, attrs = {}, html = '') => {
     const n = document.createElement(tag);
@@ -614,7 +602,8 @@
       lastPath = location.pathname;
       fonts = [];
       if (autoRAF && !isReader()) autoScroll(false);
-      if (isReader()) localStorage.setItem(LAST_KEY, location.href);
+      // 记下当前书，Go 侧下次启动直接打开。
+      if (isReader()) post('last', location.href);
       render();
       if (isReader()) relayout();
     }

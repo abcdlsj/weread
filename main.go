@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -64,10 +65,13 @@ func main() {
 
 	s.app.Menu.Set(s.buildMenu())
 	s.win = s.newMainWindow()
+	// Wails 默认等页面加载完才显示窗口，微信读书首屏要 8 秒以上，这里启动即显示。
 	s.app.Event.OnApplicationEvent(events.Common.ApplicationStarted, func(*application.ApplicationEvent) {
 		s.mu.Lock()
 		prefs := s.cfg.Prefs
 		s.mu.Unlock()
+		s.win.Show()
+		s.win.Focus()
 		applyWindowLook(s.win, prefs)
 	})
 	if err := s.app.GlobalShortcut.Register(bossKey, s.toggleVisible); err != nil {
@@ -79,12 +83,21 @@ func main() {
 	}
 }
 
-// startURL 允许用 WEREAD_URL 覆盖启动页，便于调试指定页面。
-func startURL() string {
+// startURL 决定启动页：WEREAD_URL（调试用）> 上次阅读的书 > 书架。
+// 直接打开上次的书，避免先加载书架再跳转，多等一整次页面加载。
+func (s *shell) startURL() string {
 	if u := os.Getenv("WEREAD_URL"); u != "" {
 		return u
 	}
+	if s.cfg.Prefs.RestoreLast && isReaderURL(s.cfg.LastURL) {
+		return s.cfg.LastURL
+	}
 	return homeURL
+}
+
+func isReaderURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && u.Scheme == "https" && u.Host == siteHost && strings.HasPrefix(u.Path, "/web/reader/")
 }
 
 func (s *shell) newMainWindow() *application.WebviewWindow {
@@ -95,7 +108,7 @@ func (s *shell) newMainWindow() *application.WebviewWindow {
 		Height:              800,
 		MinWidth:            420,
 		MinHeight:           360,
-		URL:                 startURL(),
+		URL:                 s.startURL(),
 		AlwaysOnTop:         s.cfg.AlwaysOnTop,
 		BackgroundColour:    application.NewRGB(255, 255, 255),
 		JS:                  s.injectScript(),
@@ -266,6 +279,18 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 		prefs := s.cfg.Prefs
 		s.mu.Unlock()
 		s.callJS("apply", prefs)
+	case "last":
+		if !isReaderURL(msg.Value) {
+			return
+		}
+		s.mu.Lock()
+		changed := s.cfg.LastURL != msg.Value
+		s.cfg.LastURL = msg.Value
+		cfg := s.cfg
+		s.mu.Unlock()
+		if changed {
+			_ = saveConfig(cfg)
+		}
 	case "title":
 		title := "微信读书"
 		if msg.Value != "" {
