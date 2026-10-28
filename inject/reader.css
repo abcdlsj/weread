@@ -38,6 +38,7 @@ html.wr-reader .readerControls .wr_tooltip_container {
   pointer-events: none !important;
 }
 html.wr-reader.wr-tapping .readerControls .wr_tooltip_container { pointer-events: auto !important; }
+html.wr-tapping #wr-panel, html.wr-tapping #wr-dock, html.wr-tapping #wr-dock * { pointer-events: none !important; }
 html.wr-reader .readerControls .wr_tooltip_item { display: none !important; }
 /* 书架页：去掉推广入口 */
 .navBar_link_Upload,
@@ -106,6 +107,14 @@ html.wr-reader:not(.wr-horizontal) .app_content {
   max-width: var(--wr-cw) !important;
   width: var(--wr-cw) !important;
 }
+/* 强制重排：在两种宽度间交替，一次 resize 就能让引擎重排 */
+html.wr-reader.wr-nudge:not(.wr-horizontal) .app_content {
+  max-width: calc(var(--wr-cw) - 1px) !important;
+  width: calc(var(--wr-cw) - 1px) !important;
+}
+/* 改排版时正文先变淡，重排完再恢复 */
+html.wr-reader .readerChapterContent { transition: opacity .15s ease; }
+html.wr-reader.wr-busy .readerChapterContent { opacity: .35; }
 
 /* ---------- 标题条 ---------- */
 #wr-bar {
@@ -189,19 +198,35 @@ html.wr-dock-open #wr-dock .wr-dock-main,
 #wr-dock .wr-dock-main:focus-visible { opacity: 1; box-shadow: var(--wr-shadow); }
 #wr-dock button:focus-visible { outline: 2px solid var(--wr-accent); outline-offset: 2px; }
 #wr-dock button[hidden] { display: none; }
+/* 本书还没加入书架：主按钮右上角一个小点 */
+#wr-dock .wr-dock-main { position: relative; }
+html.wr-can-add:not(.wr-dock-open) #wr-dock .wr-dock-main::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wr-accent);
+}
+html.wr-can-add #wr-dock .wr-dock-main { opacity: .8; }
 #wr-dock .wr-dock-items {
   display: flex;
   flex-direction: column;
   gap: 8px;
   pointer-events: none;
 }
+/* 收起时用 visibility 隐藏：只设 opacity 0，毛玻璃层仍在每帧合成 */
 #wr-dock .wr-dock-items button {
   position: relative;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(8px) scale(.9);
+  transition: transform .18s ease, opacity .18s ease, background-color .15s ease, visibility 0s linear .18s;
 }
 html.wr-dock-open #wr-dock .wr-dock-items { pointer-events: auto; }
-html.wr-dock-open #wr-dock .wr-dock-items button { opacity: 1; transform: none; }
+html.wr-dock-open #wr-dock .wr-dock-items button { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
 html.wr-dock-open #wr-dock .wr-dock-main { transform: rotate(90deg); }
 /* 悬停提示 */
 #wr-dock [data-tip]::after {
@@ -243,13 +268,14 @@ html.wr-panel-open #wr-dock { opacity: 0; pointer-events: none; }
   box-shadow: var(--wr-shadow);
   font: 13px/1.45 var(--wr-ui-font);
   opacity: 0;
+  visibility: hidden;
   transform: translateX(16px);
   pointer-events: none;
-  transition: opacity .2s ease, transform .2s ease;
+  transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s;
   scrollbar-width: none;
 }
 #wr-panel::-webkit-scrollbar { display: none; }
-html.wr-panel-open #wr-panel { opacity: 1; transform: none; pointer-events: auto; }
+html.wr-panel-open #wr-panel { opacity: 1; visibility: visible; transform: none; pointer-events: auto; transition-delay: 0s; }
 #wr-panel * { box-sizing: border-box; font-family: inherit; }
 #wr-panel em { font-style: normal; font-size: 11px; color: var(--wr-sub); margin-left: 4px; }
 #wr-panel header { display: flex; align-items: center; justify-content: space-between; }
@@ -406,12 +432,14 @@ html.wr-reader.wr-tint-dim   #wr-tint { background: #000; mix-blend-mode: normal
   top: 0;
   left: 0;
   height: 2px;
-  width: 0;
+  width: 100%;
   z-index: 2147483007;
   background: var(--wr-accent);
   opacity: 0;
   pointer-events: none;
-  transition: width .15s linear, opacity .3s ease;
+  transform: scaleX(0);
+  transform-origin: 0 0;
+  transition: transform .15s linear, opacity .3s ease;
 }
 html.wr-reader:not(.wr-horizontal) #wr-progress { opacity: .6; }
 
@@ -431,10 +459,11 @@ html.wr-reader:not(.wr-horizontal) #wr-progress { opacity: .6; }
   -webkit-backdrop-filter: blur(20px);
   box-shadow: var(--wr-shadow);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity .2s ease, transform .2s ease;
+  transition: opacity .2s ease, transform .2s ease, visibility 0s linear .2s;
 }
-#wr-toast.wr-show { opacity: 1; transform: translate(-50%, 0); }
+#wr-toast.wr-show { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition-delay: 0s; }
 
 /* ---------- 快捷键速查 ---------- */
 #wr-help {
@@ -523,8 +552,6 @@ html.wr-stealth .renderTargetWatermark,
 html.wr-stealth .readerFooter_button { opacity: .25 !important; }
 html.wr-stealth #wr-tint { display: none; }
 html.wr-stealth #wr-progress { background: var(--wr-fg); opacity: .3 !important; height: 1px; }
-html.wr-stealth #wr-bar .wr-lights button { background: var(--wr-line) !important; }
-html.wr-stealth #wr-bar:hover .wr-lights button { background: var(--wr-sub) !important; }
 html.wr-stealth #wr-bar .wr-title { opacity: 0 !important; }
 /* 浮层需要实底，否则和正文叠在一起看不清。
    注意 .wr_float_panel_container 是常驻的全屏容器，只能给里面的面板上色。 */
@@ -565,5 +592,5 @@ html { transition: background-color .28s ease; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
   #wr-help, #wr-help > div, html { transition: none !important; }
   #wr-tint, #wr-progress, #wr-toast, #wr-dock, #wr-dock button, #wr-panel,
-  #wr-bar .wr-title, #wr-bar .wr-lights { transition: none !important; }
+  #wr-bar .wr-title, #wr-bar .wr-lights, html.wr-reader .readerChapterContent { transition: none !important; }
 }

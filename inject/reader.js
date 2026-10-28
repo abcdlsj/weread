@@ -1,4 +1,4 @@
-// 微信读书阅读增强脚本。由 Go 侧在每次导航完成后注入，
+// 微信读书阅读增强脚本。由 Go 侧以 document-start 注入，此时只有 <html>，head、body 都还没有。
 // 依赖 window.__WR_PREFS__ 与 window.__WR_CSS__ 已预先赋值。
 (() => {
   if (window.__wr) return;
@@ -16,6 +16,8 @@
     note: '.readerControls_item.wr_note',
     theme: '.readerControls_item.white, .readerControls_item.dark',
     fontButton: '.fontSizeButton',
+    // 顶栏整体隐藏了，“加入书架”按钮从这里代点。
+    addToShelf: '.readerTopBar_addToShelf',
     fontPanelMask: '.reader-font-control-panel-mask',
     fontTrack: '.reader_font_control_slider_track',
     fontDots: '.reader_font_control_slider_track_level_dot',
@@ -48,7 +50,9 @@
   };
   const isReader = () => READER_PATH.test(location.pathname);
   const scroller = () => document.scrollingElement || root;
-  const isHorizontal = () => !!$(SEL.horizontal) || scroller().scrollHeight <= window.innerHeight + 4;
+  // 正文画出来之前页面本来就矮，不能据此判成左右翻页，否则首屏会按错误宽度排一次版。
+  const isHorizontal = () => !!$(SEL.horizontal)
+    || (!!$(`${SEL.engineStyleHost} canvas`) && scroller().scrollHeight <= window.innerHeight + 4);
 
   // ---------- 图标 ----------
   const svg = (d) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
@@ -61,6 +65,7 @@
     theme: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>'),
     type: svg('<path d="M4 19l5-14 5 14M5.8 14h6.4"/><path d="M15 19v-6.5a2.5 2.5 0 0 1 5 0V19M15 15.5h5"/>'),
     shelf: svg('<path d="M5 4h3v16H5zM10 4h3v16h-3z"/><path d="M15.5 5.2l2.9-.8 3.9 15.4-2.9.8z"/>'),
+    add: svg('<path d="M12 5v14M5 12h14"/>'),
     stealth: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2.5L7 15M12 15h5"/>'),
   };
 
@@ -94,6 +99,7 @@
 
   // 悬浮 Dock：官方侧边按钮全部收进来。
   const DOCK = [
+    { id: 'addShelf', label: '加入书架', icon: ICON.add, reader: true },
     { id: 'catalog', label: '目录', icon: ICON.catalog, reader: true },
     { id: 'note', label: '笔记', icon: ICON.note, reader: true },
     { id: 'ai', label: 'AI 问书', icon: ICON.ai, reader: true },
@@ -111,6 +117,10 @@
   const dockMain = dock.querySelector('.wr-dock-main');
   let dockOpen = false;
   // 窗口较窄时官方会收起侧栏按钮，对应的 Dock 项也隐藏。
+  const addShelfButton = () => {
+    const b = $(SEL.addToShelf);
+    return b && /加入书架/.test(b.textContent || '') ? b : null;
+  };
   const DOCK_TARGET = {
     note: () => $(SEL.note) || officialButton(/笔记/),
     ai: () => officialButton(/问书/),
@@ -119,10 +129,14 @@
     theme: () => (isReader() ? $(SEL.theme) : document.body),
   };
   const syncDock = () => {
+    // 没加入书架时主按钮上亮一个小点，提示展开后可以加入。
+    const canAdd = isReader() && !!addShelfButton();
+    if (root.classList.contains('wr-can-add') !== canAdd) root.classList.toggle('wr-can-add', canAdd);
     dock.querySelectorAll('[data-dock]').forEach((b) => {
       const id = b.dataset.dock;
       let show = !b.hasAttribute('data-reader') || isReader();
-      if (show && DOCK_TARGET[id]) {
+      if (id === 'addShelf') show = canAdd;
+      else if (show && DOCK_TARGET[id]) {
         const t = DOCK_TARGET[id]();
         show = !!t && t.getBoundingClientRect().width > 0;
       }
@@ -155,18 +169,36 @@
     return false;
   };
   // 侧栏按钮只认真实点击：临时让它可点，由 Go 侧在按钮中心投递一次原生点击。
+  // x、y 是页面坐标，按缩放换算成窗口坐标。
+  // 代点期间 wr-tapping 让官方按钮可点、设置浮窗和 Dock 让开，否则原生点击会落在它们身上。
+  let tapTimer;
+  const tapAt = (x, y) => {
+    // 标题条上的点击会被当成拖动窗口。
+    if (y < 30 || x < 0 || x > window.innerWidth || y > window.innerHeight) return;
+    root.classList.add('wr-tapping');
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(() => root.classList.remove('wr-tapping'), 400);
+    const scale = window.outerWidth / window.innerWidth || 1;
+    post('tap', JSON.stringify({ X: x * scale, Y: y * scale }));
+  };
+  const tapCenter = (n) => {
+    const r = n.getBoundingClientRect();
+    tapAt(r.left + r.width / 2, r.top + r.height / 2);
+  };
   const tapOfficial = (btn, name) => {
     if (!btn) { toast(`当前页面没有${name}`); return false; }
-    root.classList.add('wr-tapping');
-    const r = btn.getBoundingClientRect();
-    const scale = window.outerWidth / window.innerWidth || 1;
-    post('tap', JSON.stringify({ X: (r.left + r.width / 2) * scale, Y: (r.top + r.height / 2) * scale }));
-    setTimeout(() => root.classList.remove('wr-tapping'), 400);
+    tapCenter(btn);
     return true;
   };
   const runDock = (id) => {
     toggleDock(false);
     switch (id) {
+      case 'addShelf':
+        if (clickOfficial(addShelfButton(), '加入书架按钮')) {
+          toast('已加入书架');
+          setTimeout(syncDock, 600);
+        }
+        break;
       case 'catalog': clickOfficial($(SEL.catalog), '目录'); break;
       case 'note': tapOfficial($(SEL.note) || officialButton(/笔记/), '笔记'); break;
       case 'ai': tapOfficial(officialButton(/问书/), 'AI 问书'); break;
@@ -257,9 +289,10 @@
   </table></div>`);
   help.addEventListener('click', (e) => { if (e.target === help) help.classList.remove('wr-show'); });
 
+  // 样式越早插入越好，没有 head 就先挂在 <html> 下；浮层节点等 body 出现再挂。
   const mount = () => {
-    if (!document.head || !document.body) return false;
-    if (!style.isConnected) document.head.appendChild(style);
+    if (!style.isConnected) (document.head || root).appendChild(style);
+    if (!document.body) return false;
     for (const n of [fadeTop, fadeBottom, tint, progress, bar, dock, panel, toastEl, help]) {
       if (!n.isConnected) document.body.appendChild(n);
     }
@@ -343,16 +376,59 @@
     }));
     t.finished.finally(() => { transitioning = false; });
   };
+  // 改排版要等官方引擎重排完，用 View Transition 会让画面静止一两秒。
+  // 这类切换改为：设置立即生效，正文先变淡，重排完再恢复，期间界面照常响应。
+  let busyCount = 0;
+  let layoutJob = null; // 正在进行的强制重排
+  const busy = async (fn, max = 900) => {
+    if (!isReader()) { await fn(); return; }
+    busyCount++;
+    root.classList.add('wr-busy');
+    const h0 = scroller().scrollHeight;
+    try {
+      // fn 返回 false 表示排版不会变，不用等。
+      // 左右翻页时页面高度不随排版变化，没法判断重排完成，只短暂等一下。
+      if ((await fn()) !== false) await (layoutJob || settle(h0, isHorizontal() ? 300 : max));
+    } finally {
+      if (--busyCount === 0) root.classList.remove('wr-busy');
+    }
+  };
+  // 等正文总高度变化并稳定下来；max 毫秒内没变就放弃。返回是否变化过。
+  const settle = (h0, max) => new Promise((resolve) => {
+    const s = scroller();
+    const t0 = performance.now();
+    let last = h0;
+    let stable = 0;
+    const tick = () => {
+      const h = s.scrollHeight;
+      stable = h !== h0 && h === last ? stable + 1 : 0;
+      last = h;
+      if (stable >= 2) { resolve(true); return; }
+      if (performance.now() - t0 > max) { resolve(h !== h0); return; }
+      setTimeout(tick, 80);
+    };
+    setTimeout(tick, 80);
+  });
+
   let booted = false;
-  const TYPO_KEYS = ['spacing', 'trimTop'];
-  const VISUAL = ['width', 'tint', 'stealth', 'stealthColor', 'theme', ...TYPO_KEYS];
+  const LAYOUT_KEYS = ['spacing', 'trimTop', 'width'];
+  const VISUAL = ['tint', 'stealth', 'stealthColor', 'theme'];
 
   let speed = prefs.scrollSpeed || 40;
   const apply = (next) => {
     const changed = Object.keys(next || {}).filter((k) => prefs[k] !== next[k]);
+    if (booted && changed.some((k) => LAYOUT_KEYS.includes(k))) {
+      const col = $(SEL.content);
+      const w0 = col && col.getBoundingClientRect().width;
+      busy(() => {
+        applyNow(next, changed);
+        // 窗口太窄时换版心宽度，实际宽度可能没变，不必等重排。
+        if (!changed.some((k) => k !== 'width') && col && col.getBoundingClientRect().width === w0) return false;
+      }, 700);
+      return;
+    }
     if (booted && changed.some((k) => VISUAL.includes(k))) {
-      const typo = changed.some((k) => TYPO_KEYS.includes(k));
-      smooth(() => applyNow(next, changed), typo ? 1500 : changed.includes('width') ? 250 : changed.includes('theme') ? 200 : 0);
+      smooth(() => applyNow(next, changed), changed.includes('theme') ? 200 : 0);
       return;
     }
     applyNow(next, changed);
@@ -384,10 +460,16 @@
     apply(patch);
   };
 
+  // 用 transform 缩放，不触发布局；滚动事件按帧合并。
+  let progressRAF = 0;
   const updateProgress = () => {
-    const s = scroller();
-    const max = s.scrollHeight - window.innerHeight;
-    progress.style.width = max > 0 ? `${Math.min(100, (s.scrollTop / max) * 100)}%` : '0';
+    if (progressRAF) return;
+    progressRAF = requestAnimationFrame(() => {
+      progressRAF = 0;
+      const s = scroller();
+      const max = s.scrollHeight - window.innerHeight;
+      progress.style.transform = `scaleX(${max > 0 ? Math.min(1, s.scrollTop / max) : 0})`;
+    });
   };
 
   // ---------- 自定义排版 ----------
@@ -409,31 +491,40 @@
     const p = ['.content', 'p', '.bodyContent', '.text'].map((c) => `.readerChapterContent ${c}`).join(',');
     return `${p}{line-height:${v.lh}em !important;margin-top:0 !important;margin-bottom:${v.para}em !important;letter-spacing:${v.ls}em !important}`;
   };
-  // 官方没有对外的重排接口；容器宽度变化会触发重排，所以临时把宽度改 1px 再改回来。
-  // 首次触发偶尔不生效，排版改了总高度必然变化，高度没变就再触发一次。
-  let relayoutTimer;
-  const forceRelayout = (retry = 1) => {
-    clearTimeout(relayoutTimer);
-    relayoutTimer = setTimeout(() => {
+  // 官方没有对外的重排接口，容器宽度变化会触发重排。
+  // 上下滚动时切换 wr-nudge，让正文栏在“版心宽度”和“版心宽度 − 1px”之间交替，一次 resize 就够；
+  // 以前是改 1px 再改回，引擎对 resize 有防抖，两次之间得等 600ms。
+  // 排版改了总高度必然变化，高度没变就再推一次。
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const forceRelayout = () => {
+    const job = (async () => {
+      await wait(30); // 合并同一轮里的多次调用
+      if (layoutJob !== job) return;
       const col = $(SEL.content);
       if (!col) return;
       const s = scroller();
       const h0 = s.scrollHeight;
       const y = s.scrollTop / Math.max(1, h0);
-      const w = col.getBoundingClientRect().width;
-      col.style.setProperty('width', `${w - 1}px`, 'important');
-      window.dispatchEvent(new Event('resize'));
-      // 引擎对 resize 做了防抖，两次间隔太短会被合并成“宽度没变”。
-      setTimeout(() => {
+      if (isHorizontal()) {
+        // 左右翻页不用版心宽度规则，只能临时改内联宽度再改回。
+        col.style.setProperty('width', `${col.getBoundingClientRect().width - 1}px`, 'important');
+        window.dispatchEvent(new Event('resize'));
+        await wait(600);
         col.style.removeProperty('width');
         window.dispatchEvent(new Event('resize'));
-        setTimeout(() => {
-          if (s.scrollHeight === h0 && retry > 0) { forceRelayout(retry - 1); return; }
-          // 行高变了总高度也变，按比例回到原来读到的位置。
-          s.scrollTop = y * s.scrollHeight;
-        }, 700);
-      }, 600);
-    }, 150);
+        await wait(600);
+        return;
+      }
+      const nudge = () => { root.classList.toggle('wr-nudge'); window.dispatchEvent(new Event('resize')); };
+      nudge();
+      let changed = await settle(h0, 900);
+      if (!changed && layoutJob === job) { nudge(); changed = await settle(h0, 900); }
+      // 行高变了总高度也变，按比例回到原来读到的位置。
+      if (changed) s.scrollTop = y * s.scrollHeight;
+    })();
+    layoutJob = job;
+    job.finally(() => { if (layoutJob === job) layoutJob = null; });
+    return job;
   };
   // 有的书在样式表里给章首插图、标题写了很大的上边距（如 margin: 30% auto），
   // 把章首推到屏幕中间。逐条解析书的样式，把过大的上边距压到 1em。
@@ -525,9 +616,9 @@
     if (t.classList.contains('wr-x')) { togglePanel(false); return; }
     const group = t.closest('[data-key]');
     if (group && t.dataset.v) { setPref({ [group.dataset.key]: t.dataset.v }); return; }
-    if (t.dataset.font) { const k = Number(t.dataset.font); smooth(() => pickFont(k), 300); return; }
-    if (t.dataset.act === 'font-') smooth(() => stepFont(-1), 300);
-    if (t.dataset.act === 'font+') smooth(() => stepFont(1), 300);
+    if (t.dataset.font) { const k = Number(t.dataset.font); busy(() => pickFont(k)); return; }
+    if (t.dataset.act === 'font-') busy(() => stepFont(-1));
+    if (t.dataset.act === 'font+') busy(() => stepFont(1));
   });
   panel.addEventListener('change', (e) => {
     const n = e.target;
@@ -541,28 +632,59 @@
     if (n.dataset.key === 'stealthAlpha') apply({ stealthAlpha: Number(n.value) });
   });
   document.addEventListener('mousedown', (e) => {
+    if (root.classList.contains('wr-tapping')) return; // 代点的原生点击不算点在外面
     if (panelOpen && !panel.contains(e.target) && !dock.contains(e.target)) togglePanel(false);
     if (dockOpen && !dock.contains(e.target)) toggleDock(false);
   }, true);
 
   // ---------- 代理官方字号 / 字体面板 ----------
   // 官方面板藏起来打开，操作完再关掉，用户只看到正文变化。
-  const withFontPanel = (fn) => new Promise((resolve) => {
-    const btn = $(SEL.fontButton);
-    if (!btn) { toast('请在阅读页使用'); resolve(false); return; }
-    root.classList.add('wr-proxy');
-    btn.click();
-    setTimeout(() => {
-      try { fn(); } finally {
-        setTimeout(() => {
-          const mask = $(SEL.fontPanelMask);
-          if (mask) mask.click();
-          root.classList.remove('wr-proxy');
-          resolve(true);
-        }, 250);
-      }
-    }, 200);
+  const fontPanelShown = () => {
+    const dot = $(SEL.fontDots);
+    return !!dot && dot.getBoundingClientRect().width > 0;
+  };
+  const waitFor = (cond, max) => new Promise((resolve) => {
+    const t0 = performance.now();
+    const tick = () => {
+      if (cond()) resolve(true);
+      else if (performance.now() - t0 > max) resolve(false);
+      else requestAnimationFrame(tick);
+    };
+    tick();
   });
+  // 左右翻页时官方按钮、滑杆、遮罩都不响应合成点击，先合成、不行再投递原生点击。
+  // 打开设置时会读字体列表，和紧接着的字号操作排队执行，避免同时开关官方面板。
+  let fontQueue = Promise.resolve();
+  const withFontPanel = (fn) => {
+    const job = fontQueue.then(() => runFontPanel(fn));
+    fontQueue = job.catch(() => {});
+    return job;
+  };
+  const runFontPanel = async (fn) => {
+    const btn = $(SEL.fontButton);
+    if (!btn) { toast('请在阅读页使用'); return false; }
+    root.classList.add('wr-proxy');
+    try {
+      if (!fontPanelShown()) {
+        btn.click();
+        if (!(await waitFor(fontPanelShown, 150)) && btn.getBoundingClientRect().width > 0) tapOfficial(btn, '字号按钮');
+        // 面板排好版就操作，不再固定等 200ms。
+        if (!(await waitFor(fontPanelShown, 800))) { toast('没能打开官方字体面板'); return false; }
+      }
+      fn();
+      await new Promise((r) => setTimeout(r, 250));
+      const mask = $(SEL.fontPanelMask);
+      if (mask) mask.click();
+      if (!(await waitFor(() => !fontPanelShown(), 150))) {
+        // 合成点击关不掉时，在字号按钮的位置点一次真的：那里此刻盖着官方遮罩，点中即关闭。
+        tapCenter(btn);
+        await waitFor(() => !fontPanelShown(), 400);
+      }
+      return true;
+    } finally {
+      root.classList.remove('wr-proxy');
+    }
+  };
   // 官方滑杆只认轨道上的 click，按坐标落到目标档位。
   const clickAt = (n, x, y) => {
     n.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, view: window }));
@@ -578,6 +700,8 @@
     const r = dots[next - 1].getBoundingClientRect();
     const tr = track.getBoundingClientRect();
     clickAt(track, r.left + r.width / 2, tr.top + tr.height / 2);
+    // 左右翻页时滑杆不认合成点击，同一位置再投递一次原生点击；点同一档位两次结果不变。
+    tapAt(r.left + r.width / 2, tr.top + tr.height / 2);
   }).then(() => { setTimeout(syncPanel, 300); setTimeout(syncPanel, 900); });
 
   // 官方列表在多个分组里重复出现，按字体去重，记下第一次出现的下标用于点击。
@@ -605,7 +729,8 @@
   };
   const pickFont = (k) => withFontPanel(() => {
     const items = document.querySelectorAll(SEL.fontItems);
-    if (fonts[k] && items[fonts[k].i]) items[fonts[k].i].click();
+    const n = fonts[k] && items[fonts[k].i];
+    if (n) { n.click(); tapCenter(n); }
   }).then(() => {
     fonts.forEach((f, j) => { f.selected = j === k; });
     renderFonts();
@@ -613,15 +738,22 @@
   });
 
   // ---------- 沉浸：空闲时隐藏光标与浮层 ----------
+  // mousemove 每帧都会触发；只在状态真正变化时改 class，否则整页每帧都要重算样式。
   let uiTimer;
   let idleTimer;
+  let uiOn = false;
+  let idle = false;
+  let lastMove = 0;
   const showUI = () => {
-    root.classList.add('wr-ui');
-    root.classList.remove('wr-idle');
+    const now = performance.now();
+    if (uiOn && !idle && now - lastMove < 250) return;
+    lastMove = now;
+    if (!uiOn) { uiOn = true; root.classList.add('wr-ui'); }
+    if (idle) { idle = false; root.classList.remove('wr-idle'); }
     clearTimeout(uiTimer);
     clearTimeout(idleTimer);
-    uiTimer = setTimeout(() => root.classList.remove('wr-ui'), 2000);
-    idleTimer = setTimeout(() => root.classList.add('wr-idle'), 2500);
+    uiTimer = setTimeout(() => { uiOn = false; root.classList.remove('wr-ui'); }, 2000);
+    idleTimer = setTimeout(() => { idle = true; root.classList.add('wr-idle'); }, 2500);
   };
   document.addEventListener('mousemove', showUI, { passive: true });
 
@@ -800,8 +932,17 @@
   window.addEventListener('popstate', onRoute);
 
   // 官方是 SPA，节点和标题会异步出现，节流观察。
+  // 读取计算样式、页面高度会强制重算，放到较慢的一档里做。
   let pending = false;
+  let heavyTimer = 0;
+  const heavy = () => {
+    heavyTimer = 0;
+    root.classList.toggle('wr-horizontal', isReader() && isHorizontal());
+    syncDark();
+    syncDock();
+  };
   new MutationObserver(() => {
+    if (!heavyTimer) heavyTimer = setTimeout(heavy, 250);
     if (pending) return;
     pending = true;
     requestAnimationFrame(() => {
@@ -809,8 +950,6 @@
       mount();
       onRoute();
       ensureLogin();
-      root.classList.toggle('wr-horizontal', isReader() && isHorizontal());
-      syncDark();
       if (isReader()) syncTypo();
     });
   }).observe(root, { childList: true, subtree: true });

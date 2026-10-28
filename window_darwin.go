@@ -7,6 +7,7 @@ package main
 #cgo LDFLAGS: -framework Cocoa -framework WebKit
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#include <stdlib.h>
 
 static WKWebView *findWebView(NSView *v) {
 	if ([v isKindOfClass:[WKWebView class]]) return (WKWebView *)v;
@@ -81,6 +82,21 @@ static void setWindowBase(void *ptr, int r, int g, int b) {
 		if (@available(macOS 12.0, *)) web.underPageBackgroundColor = c;
 	}
 }
+// 以 document-start 注入增强脚本：页面首帧之前样式就已生效，不会先露出官方界面。
+// Wails 只提供导航完成后才执行的 options.JS，这里直接用 WKUserScript。
+static bool setUserScript(void *ptr, const char *src) {
+	NSWindow *w = (__bridge NSWindow *)ptr;
+	WKWebView *web = findWebView(w.contentView);
+	if (!web) return false;
+	WKUserContentController *uc = web.configuration.userContentController;
+	[uc removeAllUserScripts];
+	WKUserScript *s = [[WKUserScript alloc] initWithSource:[NSString stringWithUTF8String:src]
+	                                         injectionTime:WKUserScriptInjectionTimeAtDocumentStart
+	                                      forMainFrameOnly:YES];
+	[uc addUserScript:s];
+	[s release];
+	return true;
+}
 static bool systemIsDark(void) {
 	NSAppearanceName n = [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
 	return [n isEqualToString:NSAppearanceNameDarkAqua];
@@ -89,6 +105,8 @@ static bool systemIsDark(void) {
 import "C"
 
 import (
+	"unsafe"
+
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -120,6 +138,19 @@ func setWindowBase(w *application.WebviewWindow, r, g, b uint8) {
 			C.setWindowBase(ptr, C.int(r), C.int(g), C.int(b))
 		}
 	})
+}
+
+// setUserScript 替换页面的 document-start 脚本，下一次导航起生效。
+func setUserScript(w *application.WebviewWindow, src string) bool {
+	cs := C.CString(src)
+	defer C.free(unsafe.Pointer(cs))
+	var ok bool
+	application.InvokeSync(func() {
+		if ptr := w.NativeWindow(); ptr != nil {
+			ok = bool(C.setUserScript(ptr, cs))
+		}
+	})
+	return ok
 }
 
 // systemDark 返回系统是否处于深色外观，供“跟随系统”的夜间模式使用。

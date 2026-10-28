@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -44,6 +45,7 @@ type shell struct {
 	menu *application.Menu
 
 	saveTimer *time.Timer
+	quitting  atomic.Bool
 
 	immersiveItem *application.MenuItem
 	autoItem      *application.MenuItem
@@ -63,6 +65,8 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		RawMessageHandler: s.onMessage,
+		// 真正退出（⌘Q）时放行关窗，其余关窗只是隐藏。
+		ShouldQuit: func() bool { s.quitting.Store(true); return true },
 	})
 
 	s.app.Menu.Set(s.buildMenu())
@@ -77,6 +81,16 @@ func main() {
 		s.win.Show()
 		s.win.Focus()
 		applyWindowLook(s.win, prefs)
+		// 窗口先停在本地空白页，装好 document-start 脚本再进入微信读书。
+		if !s.installScript() {
+			log.Printf("install user script failed")
+		}
+		s.win.SetURL(s.startURL())
+	})
+	// 关窗后点 Dock 图标，把隐藏的窗口找回来。
+	s.app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(*application.ApplicationEvent) {
+		s.win.Show()
+		s.win.Focus()
 	})
 	if err := s.app.GlobalShortcut.Register(bossKey, s.toggleVisible); err != nil {
 		log.Printf("register boss key: %v", err)
@@ -112,10 +126,9 @@ func (s *shell) newMainWindow() *application.WebviewWindow {
 		Height:              800,
 		MinWidth:            420,
 		MinHeight:           360,
-		URL:                 s.startURL(),
+		URL:                 "/",
 		AlwaysOnTop:         s.cfg.AlwaysOnTop,
 		BackgroundColour:    application.NewRGB(255, 255, 255),
-		JS:                  s.injectScript(),
 		CloseButtonState:    application.ButtonHidden,
 		MinimiseButtonState: application.ButtonHidden,
 		MaximiseButtonState: application.ButtonHidden,
@@ -140,6 +153,14 @@ func (s *shell) newMainWindow() *application.WebviewWindow {
 	}
 
 	w := s.app.Window.NewWithOptions(opts)
+	// 关窗只隐藏，页面保持加载，再打开不用重新等首屏。
+	w.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		if s.quitting.Load() {
+			return
+		}
+		e.Cancel()
+		s.hide()
+	})
 	// 退出时窗口已销毁，读不到位置；所以在拖动、缩放时就记下来。
 	for _, ev := range []events.WindowEventType{events.Common.WindowDidMove, events.Common.WindowDidResize} {
 		w.OnWindowEvent(ev, func(*application.WindowEvent) { s.persistWindowSoon() })
@@ -147,13 +168,18 @@ func (s *shell) newMainWindow() *application.WebviewWindow {
 	return w
 }
 
-// injectScript 在每次页面导航完成后执行：先注入偏好与样式，再跑增强脚本。
+// injectScript 在每次页面开始加载时执行：先注入偏好与样式，再跑增强脚本。
 func (s *shell) injectScript() string {
 	s.mu.Lock()
 	prefs, _ := json.Marshal(s.cfg.Prefs)
 	s.mu.Unlock()
 	css, _ := json.Marshal(readerCSS)
 	return fmt.Sprintf("window.__WR_PREFS__=%s;window.__WR_CSS__=%s;window.__WR_DEBUG__=%t;\n%s", prefs, css, debug, readerJS)
+}
+
+// installScript 用最新偏好重装 document-start 脚本，整页刷新时首帧就是对的样式。
+func (s *shell) installScript() bool {
+	return setUserScript(s.win, s.injectScript())
 }
 
 func (s *shell) buildMenu() *application.Menu {
@@ -232,6 +258,7 @@ func (s *shell) updatePrefs(fn func(*Prefs)) {
 		log.Printf("save config: %v", err)
 	}
 	s.callJS("apply", cfg.Prefs)
+	s.installScript()
 }
 
 func (s *shell) setStealth(on bool) {
@@ -244,10 +271,14 @@ func (s *shell) setStealth(on bool) {
 	s.menu.Update()
 }
 
+func (s *shell) hide() {
+	s.callJS("autoScroll", false)
+	s.win.Hide()
+}
+
 func (s *shell) toggleVisible() {
 	if s.win.IsVisible() {
-		s.callJS("autoScroll", false)
-		s.win.Hide()
+		s.hide()
 		return
 	}
 	s.win.Show()
@@ -279,7 +310,7 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 	}
 	switch msg.Type {
 	case "ready":
-		// 整页导航后 options.JS 里的偏好可能已过期，补推一次最新值。
+		// 脚本里的偏好是安装时的快照，补推一次最新值。
 		s.mu.Lock()
 		prefs := s.cfg.Prefs
 		s.mu.Unlock()
@@ -320,6 +351,7 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 		cfg := s.cfg
 		s.mu.Unlock()
 		_ = saveConfig(cfg)
+		s.installScript()
 		if old.Stealth != p.Stealth {
 			applyWindowLook(s.win, p)
 		}
@@ -342,7 +374,7 @@ func (s *shell) onMessage(_ application.Window, raw string, info *application.Or
 			setWindowBase(s.win, c.R, c.G, c.B)
 		}
 	case "close":
-		s.win.Close()
+		s.hide()
 	case "minimise":
 		s.win.Minimise()
 	case "shelf":
